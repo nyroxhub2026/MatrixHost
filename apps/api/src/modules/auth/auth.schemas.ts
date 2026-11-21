@@ -1,15 +1,57 @@
 import { z } from "zod";
 
-export const registerSchema = z.object({
-  email: z.email().max(254),
-  username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
-  password: z.string().min(12).max(128)
-});
+const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .pipe(z.email().max(254));
 
-export const loginSchema = z.object({
-  email: z.email().max(254),
-  password: z.string().min(1).max(128)
-});
+const usernameSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(32)
+  .regex(
+    /^[a-zA-Z0-9_-]+$/,
+    "Username may contain only letters, numbers, underscores and hyphens."
+  );
 
-export type RegisterInput = z.infer<typeof registerSchema>;
-export type LoginInput = z.infer<typeof loginSchema>;
+const passwordSchema = z
+  .string()
+  .min(12)
+  .max(128)
+  .regex(
+    /[a-z]/,
+    "Password must contain a lowercase letter."
+  )
+  .regex(
+    /[A-Z]/,
+    "Password must contain an uppercase letter."
+  )
+  .regex(
+    /[0-9]/,
+    "Password must contain a number."
+  );
+
+export const registerSchema = z
+  .object({
+    email: emailSchema,
+    username: usernameSchema,
+    password: passwordSchema,
+  })
+  .strict();
+
+export const loginSchema = z
+  .object({
+    email: emailSchema,
+    password: z.string().min(1).max(128),
+  })
+  .strict();
+
+export type RegisterInput = z.infer<
+  typeof registerSchema
+>;
+
+export type LoginInput = z.infer<
+  typeof loginSchema
+>;
