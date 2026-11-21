@@ -30,8 +30,24 @@ export async function createSession(
   userId: string,
   role: string
 ) {
+  if (
+    typeof userId !== "string" ||
+    userId.length === 0 ||
+    typeof role !== "string" ||
+    role.length === 0
+  ) {
+    throw new Error("Invalid session data.");
+  }
+
   const refreshToken = createRefreshToken();
   const sessionId = randomUUID();
+
+  // Create the access token before writing to the database.
+  const accessToken = createAccessToken(
+    userId,
+    role,
+    sessionId
+  );
 
   const session = await prisma.session.create({
     data: {
@@ -45,11 +61,7 @@ export async function createSession(
   return {
     sessionId: session.id,
     refreshToken,
-    accessToken: createAccessToken(
-      userId,
-      role,
-      session.id
-    ),
+    accessToken,
   };
 }
 
@@ -69,8 +81,6 @@ export async function refreshSession(
   }
 
   const currentHash = hashToken(refreshToken);
-  const newRefreshToken = createRefreshToken();
-  const newHash = hashToken(newRefreshToken);
 
   const session = await prisma.session.findFirst({
     where: {
@@ -80,7 +90,14 @@ export async function refreshSession(
       },
     },
     include: {
-      user: true,
+      user: {
+        select: {
+          id: true,
+          role: true,
+          status: true,
+          emailVerified: true,
+        },
+      },
     },
   });
 
@@ -99,6 +116,7 @@ export async function refreshSession(
     await prisma.session.deleteMany({
       where: {
         id: session.id,
+        userId: session.userId,
       },
     });
 
@@ -106,6 +124,16 @@ export async function refreshSession(
       "Your account is not active or verified."
     );
   }
+
+  const newRefreshToken = createRefreshToken();
+  const newHash = hashToken(newRefreshToken);
+
+  // Prepare the access token before rotating the refresh token.
+  const accessToken = createAccessToken(
+    session.user.id,
+    session.user.role,
+    session.id
+  );
 
   const updated = await prisma.session.updateMany({
     where: {
@@ -132,11 +160,7 @@ export async function refreshSession(
 
   return {
     sessionId: session.id,
-    accessToken: createAccessToken(
-      session.user.id,
-      session.user.role,
-      session.id
-    ),
+    accessToken,
     refreshToken: newRefreshToken,
   };
 }
@@ -144,7 +168,7 @@ export async function refreshSession(
 export async function revokeSession(
   sessionId: string,
   userId: string
-) {
+): Promise<void> {
   await prisma.session.deleteMany({
     where: {
       id: sessionId,
@@ -155,7 +179,7 @@ export async function revokeSession(
 
 export async function revokeAllSessions(
   userId: string
-) {
+): Promise<void> {
   await prisma.session.deleteMany({
     where: {
       userId,
