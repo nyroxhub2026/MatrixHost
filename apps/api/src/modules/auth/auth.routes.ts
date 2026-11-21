@@ -1,108 +1,120 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+
+import { AppError } from "@matrixhost/shared";
+
 import { authenticate } from "../../middleware/authentication.js";
+
 import {
   loginSchema,
-  registerSchema
+  registerSchema,
 } from "./auth.schemas.js";
+
 import {
   loginUser,
-  registerUser
+  registerUser,
 } from "./auth.service.js";
+
 import {
-  createSession,
   refreshSession,
-  revokeSession
+  revokeSession,
 } from "./session.service.js";
 
-export async function authRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/auth/register", async (request, reply) => {
+const refreshSchema = z.object({
+  refreshToken: z.string().min(32).max(256),
+}).strict();
+
+const logoutSchema = z.object({
+  sessionId: z.uuid(),
+}).strict();
+
+export async function authRoutes(
+  app: FastifyInstance
+): Promise<void> {
+  app.post("/register", async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body);
 
     if (!parsed.success) {
-      return reply.status(400).send({
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "Invalid registration data."
-        }
-      });
+      throw AppError.badRequest(
+        "Invalid registration data.",
+        parsed.error.flatten()
+      );
     }
 
     const user = await registerUser(parsed.data);
 
-    return reply.status(201).send({ user });
-  });
-
-  app.post("/auth/login", async (request, reply) => {
-    const parsed = loginSchema.safeParse(request.body);
-
-    if (!parsed.success) {
-      return reply.status(400).send({
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "Invalid login data."
-        }
-      });
-    }
-
-    const result = await loginUser(parsed.data);
-    const session = await createSession(
-      result.user.id,
-      result.user.role
-    );
-
-    return reply.send({
-      user: result.user,
-      sessionId: session.sessionId,
-      accessToken: session.accessToken,
-      refreshToken: session.refreshToken
+    return reply.code(201).send({
+      success: true,
+      data: {
+        user,
+      },
     });
   });
 
-  app.post("/auth/refresh", async (request, reply) => {
-    const body = request.body as { refreshToken?: unknown };
+  app.post("/login", async (request, reply) => {
+    const parsed = loginSchema.safeParse(request.body);
 
-    if (
-      typeof body?.refreshToken !== "string" ||
-      body.refreshToken.length < 32 ||
-      body.refreshToken.length > 256
-    ) {
-      return reply.status(400).send({
-        error: {
-          code: "INVALID_REFRESH_TOKEN",
-          message: "A valid refresh token is required."
-        }
-      });
+    if (!parsed.success) {
+      throw AppError.badRequest(
+        "Invalid login data.",
+        parsed.error.flatten()
+      );
     }
 
-    const result = await refreshSession(body.refreshToken);
+    const result = await loginUser(parsed.data);
 
-    return reply.send(result);
+    return reply.send({
+      success: true,
+      data: result,
+    });
+  });
+
+  app.post("/refresh", async (request, reply) => {
+    const parsed = refreshSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      throw AppError.badRequest(
+        "A valid refresh token is required."
+      );
+    }
+
+    const result = await refreshSession(
+      parsed.data.refreshToken
+    );
+
+    return reply.send({
+      success: true,
+      data: result,
+    });
   });
 
   app.post(
-    "/auth/logout",
-    { preHandler: authenticate },
+    "/logout",
+    {
+      preHandler: [authenticate],
+    },
     async (request, reply) => {
-      const body = request.body as { sessionId?: unknown };
+      const parsed = logoutSchema.safeParse(request.body);
 
-      if (
-        typeof body?.sessionId !== "string" ||
-        body.sessionId.length > 128
-      ) {
-        return reply.status(400).send({
-          error: {
-            code: "INVALID_SESSION_ID",
-            message: "A valid session ID is required."
-          }
-        });
+      if (!parsed.success) {
+        throw AppError.badRequest(
+          "A valid session ID is required."
+        );
+      }
+
+      if (!request.authUser) {
+        throw AppError.unauthorized();
       }
 
       await revokeSession(
-        body.sessionId,
-        request.authUser!.id
+        parsed.data.sessionId,
+        request.authUser.id
       );
 
-      return reply.send({ success: true });
+      return reply.send({
+        success: true,
+        message: "Session revoked successfully.",
+      });
     }
   );
 }
