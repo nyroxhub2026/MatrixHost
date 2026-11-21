@@ -10,16 +10,28 @@ import type {
   AgentWebSocketMessage,
 } from "./protocol/index.js";
 
+import {
+  JobManager,
+  JobWebSocketBridge,
+  registerJobHandlers,
+} from "./jobs/index.js";
+
 async function main(): Promise<void> {
   const config = loadAgentConfig();
   const httpClient = new AgentHttpClient(config);
 
+  const jobManager = new JobManager();
+  registerJobHandlers(jobManager);
+
   let stopped = false;
+
   let heartbeatTimer:
     | ReturnType<typeof setTimeout>
     | undefined;
 
   let activeHeartbeat: Promise<void> | undefined;
+
+  let jobBridge: JobWebSocketBridge | undefined;
 
   const webSocketClient = new AgentWebSocketClient(
     config,
@@ -49,6 +61,11 @@ async function main(): Promise<void> {
         await handleWebSocketMessage(message);
       },
     },
+  );
+
+  jobBridge = new JobWebSocketBridge(
+    jobManager,
+    webSocketClient,
   );
 
   async function handleWebSocketMessage(
@@ -93,19 +110,15 @@ async function main(): Promise<void> {
       }
 
       case "job": {
-        console.warn(
-          "[MatrixHost Agent] Received a job, but job execution is not enabled yet.",
+        console.info(
+          "[MatrixHost Agent] Received job.",
           {
             jobId: message.job.id,
             jobType: message.job.type,
           },
         );
 
-        webSocketClient.send({
-          type: "job_ack",
-          jobId: message.job.id,
-          accepted: false,
-        });
+        await jobBridge?.handleMessage(message);
 
         break;
       }
@@ -136,6 +149,7 @@ async function main(): Promise<void> {
 
       default: {
         const exhaustiveCheck: never = message;
+
         throw new Error(
           `Unsupported message: ${String(exhaustiveCheck)}`,
         );
@@ -205,6 +219,8 @@ async function main(): Promise<void> {
 
     await webSocketClient.stop();
 
+    await jobManager.stop();
+
     if (activeHeartbeat) {
       await activeHeartbeat;
     }
@@ -245,9 +261,11 @@ async function main(): Promise<void> {
   });
 
   console.info("[MatrixHost Agent] Starting...");
+
   console.info(
     `[MatrixHost Agent] Node ID: ${config.NODE_ID}`,
   );
+
   console.info(
     `[MatrixHost Agent] Version: ${config.AGENT_VERSION}`,
   );
@@ -255,6 +273,7 @@ async function main(): Promise<void> {
   webSocketClient.start();
 
   await sendHeartbeat();
+
   scheduleHeartbeat();
 }
 
