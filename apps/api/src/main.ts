@@ -1,6 +1,17 @@
 import Fastify from "fastify";
 import websocket from "@fastify/websocket";
 
+import { appConfig } from "./config/index.js";
+
+import {
+  registerCors,
+  registerErrorHandler,
+  registerRateLimit,
+  registerSecurityHeaders,
+  registerRequestContext,
+  authenticate,
+} from "./middleware/index.js";
+
 import {
   healthRoutes,
   systemRoutes,
@@ -10,90 +21,94 @@ import {
   nodeRoutes,
   nodeAgentCredentialRoutes,
   nodeAgentHeartbeatRoutes,
+  nodeAgentWebSocketRoutes,
 } from "./modules/index.js";
 
-import {
-  registerRequestContext,
-  registerSecurityHeaders,
-  registerRateLimit,
-  registerCors,
-  registerErrorHandler,
-  authenticate,
-} from "./middleware/index.js";
+import { prisma } from "@matrixhost/database";
 
-import { appConfig } from "./config/index.js";
-
-export async function buildApp() {
+async function buildApp() {
   const app = Fastify({
     logger: {
       level: appConfig.LOG_LEVEL,
-      redact: [
-        "req.headers.authorization",
-        "req.headers.cookie",
-        "req.body.password",
-        "req.body.refreshToken",
-        "req.body.credential",
-      ],
+      redact: {
+        paths: [
+          "req.headers.authorization",
+          "req.headers.cookie",
+          "password",
+          "passwordHash",
+          "token",
+          "credential",
+          "credentialHash",
+        ],
+        censor: "[REDACTED]",
+      },
     },
 
     trustProxy: false,
+
     bodyLimit: 1024 * 1024,
-    requestIdHeader: "x-request-id",
+
+    requestTimeout: 30_000,
+
+    connectionTimeout: 10_000,
+
+    keepAliveTimeout: 72_000,
   });
 
-  // Security and HTTP configuration.
+  // Security and request infrastructure
   await registerSecurityHeaders(app);
-  await registerCors(app, appConfig);
+  await registerCors(app);
   await registerRateLimit(app);
-
-  // WebSocket support.
-  await app.register(websocket);
-
-  // Request context and error handling.
-  await registerRequestContext(app);
+  registerRequestContext(app);
   registerErrorHandler(app);
 
-  // Authentication.
-  app.decorateRequest("authUser", null);
+  // WebSocket support
+  await app.register(websocket, {
+    options: {
+      maxPayload: 64 * 1024,
+      perMessageDeflate: false,
+    },
+  });
+
+  // Authentication decorator
   app.decorate("authenticate", authenticate);
 
-  // Health endpoints.
-  await app.register(healthRoutes, {
-    prefix: "/health",
-  });
+  // Health and system routes
+  await app.register(healthRoutes);
+  await app.register(systemRoutes);
 
-  // System information.
-  await app.register(systemRoutes, {
-    prefix: "/system",
-  });
-
-  // Authentication endpoints.
+  // Authentication routes
   await app.register(authRoutes, {
     prefix: "/auth",
   });
 
-  // User endpoints.
+  // User routes
   await app.register(userRoutes, {
     prefix: "/users",
   });
 
-  // Game server endpoints.
+  // Server routes
   await app.register(serverRoutes, {
     prefix: "/servers",
   });
 
-  // Node management endpoints.
+  // Node management routes
   await app.register(nodeRoutes, {
     prefix: "/nodes",
   });
 
-  // Node Agent credential management.
+  // Node Agent credential management
   await app.register(nodeAgentCredentialRoutes, {
     prefix: "/nodes",
   });
 
-  // Node Agent heartbeat.
+  // Node Agent heartbeat endpoint
   await app.register(nodeAgentHeartbeatRoutes, {
+    prefix: "/nodes",
+  });
+
+  // Node Agent WebSocket connection
+  await app.register(nodeAgentWebSocketRoutes, {
     prefix: "/nodes",
   });
 
@@ -110,15 +125,51 @@ async function start(): Promise<void> {
     });
 
     app.log.info(
-      `MatrixHost API listening on ${appConfig.API_HOST}:${appConfig.API_PORT}`
+      {
+        host: appConfig.API_HOST,
+        port: appConfig.API_PORT,
+        environment: appConfig.NODE_ENV,
+      },
+      "MatrixHost API started.",
     );
   } catch (error) {
-    app.log.error(error);
+    app.log.error(error, "Failed to start MatrixHost API.");
+
     await app.close();
+    await prisma.$disconnect();
+
     process.exitCode = 1;
   }
+
+  const shutdown = async (signal: string) => {
+    app.log.info(
+      { signal },
+      "MatrixHost API is shutting down.",
+    );
+
+    try {
+      await app.close();
+      await prisma.$disconnect();
+
+      app.log.info("MatrixHost API stopped.");
+      process.exitCode = 0;
+    } catch (error) {
+      app.log.error(
+        error,
+        "Error during API shutdown.",
+      );
+
+      process.exitCode = 1;
+    }
+  };
+
+  process.once("SIGINT", () => {
+    void shutdown("SIGINT");
+  });
+
+  process.once("SIGTERM", () => {
+    void shutdown("SIGTERM");
+  });
 }
 
-if (appConfig.NODE_ENV !== "test") {
-  void start();
-}
+void start();
