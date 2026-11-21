@@ -9,7 +9,12 @@ import {
   registerRequestContext,
   registerSecurityHeaders
 } from "./middleware/index.js";
-import { healthRoutes, systemRoutes } from "./modules/index.js";
+import {
+  authRoutes,
+  healthRoutes,
+  systemRoutes,
+  userRoutes
+} from "./modules/index.js";
 
 async function bootstrap(): Promise<void> {
   const config = loadAppConfig();
@@ -21,6 +26,9 @@ async function bootstrap(): Promise<void> {
         "req.headers.authorization",
         "req.headers.cookie",
         "req.body.password",
+        "req.body.currentPassword",
+        "req.body.newPassword",
+        "req.body.refreshToken",
         "req.body.token"
       ]
     },
@@ -39,6 +47,8 @@ async function bootstrap(): Promise<void> {
     async (api) => {
       await api.register(healthRoutes);
       await api.register(systemRoutes);
+      await api.register(authRoutes);
+      await api.register(userRoutes);
     },
     { prefix: "/api/v1" }
   );
