@@ -52,6 +52,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.send({
       user: result.user,
+      sessionId: session.sessionId,
       accessToken: session.accessToken,
       refreshToken: session.refreshToken
     });
