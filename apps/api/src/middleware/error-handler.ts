@@ -15,6 +15,10 @@ export function registerErrorHandler(
       "API request failed"
     );
 
+    if (reply.sent) {
+      return;
+    }
+
     if (error instanceof AppError) {
       return reply.status(error.statusCode).send({
         success: false,
@@ -28,6 +32,7 @@ export function registerErrorHandler(
 
     const statusCode =
       typeof error.statusCode === "number" &&
+      Number.isInteger(error.statusCode) &&
       error.statusCode >= 400 &&
       error.statusCode < 500
         ? error.statusCode
@@ -35,17 +40,39 @@ export function registerErrorHandler(
 
     const isServerError = statusCode >= 500;
 
+    let code = "REQUEST_ERROR";
+
+    if (statusCode === 413) {
+      code = "PAYLOAD_TOO_LARGE";
+    } else if (statusCode === 429) {
+      code = "RATE_LIMIT_EXCEEDED";
+    } else if (statusCode === 400) {
+      code = "BAD_REQUEST";
+    } else if (statusCode === 404) {
+      code = "NOT_FOUND";
+    } else if (statusCode === 401) {
+      code = "UNAUTHORIZED";
+    } else if (statusCode === 403) {
+      code = "FORBIDDEN";
+    } else if (isServerError) {
+      code = "INTERNAL_SERVER_ERROR";
+    }
+
     const message = isServerError
       ? "An internal server error occurred."
-      : error.message;
-
-    const code = isServerError
-      ? "INTERNAL_SERVER_ERROR"
-      : error.statusCode === 413
-        ? "PAYLOAD_TOO_LARGE"
-        : error.statusCode === 429
-          ? "RATE_LIMIT_EXCEEDED"
-          : "REQUEST_ERROR";
+      : statusCode === 413
+        ? "Request payload is too large."
+        : statusCode === 429
+          ? "Too many requests. Please try again later."
+          : statusCode === 400
+            ? "Invalid request."
+            : statusCode === 404
+              ? "Resource not found."
+              : statusCode === 401
+                ? "Authentication required."
+                : statusCode === 403
+                  ? "Permission denied."
+                  : "Request failed.";
 
     return reply.status(statusCode).send({
       success: false,
