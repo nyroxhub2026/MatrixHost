@@ -7,8 +7,11 @@ export async function registerCors(
   app: FastifyInstance,
   config: AppConfig
 ): Promise<void> {
+  const allowedOrigin = new URL(config.PANEL_URL).origin;
+
   await app.register(cors, {
-    origin: config.PANEL_URL,
+    origin: allowedOrigin,
+
     credentials: true,
 
     methods: [
@@ -23,6 +26,10 @@ export async function registerCors(
     allowedHeaders: [
       "Content-Type",
       "Authorization",
+      "X-Request-ID",
+    ],
+
+    exposedHeaders: [
       "X-Request-ID",
     ],
 
