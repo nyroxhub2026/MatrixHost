@@ -24,10 +24,6 @@ const refreshSchema = z.object({
   refreshToken: z.string().min(32).max(256),
 }).strict();
 
-const logoutSchema = z.object({
-  sessionId: z.uuid(),
-}).strict();
-
 export async function authRoutes(
   app: FastifyInstance
 ): Promise<void> {
@@ -94,21 +90,15 @@ export async function authRoutes(
       preHandler: [authenticate],
     },
     async (request, reply) => {
-      const parsed = logoutSchema.safeParse(request.body);
+      const user = request.authUser;
 
-      if (!parsed.success) {
-        throw AppError.badRequest(
-          "A valid session ID is required."
-        );
-      }
-
-      if (!request.authUser) {
+      if (!user) {
         throw AppError.unauthorized();
       }
 
       await revokeSession(
-        parsed.data.sessionId,
-        request.authUser.id
+        user.sessionId,
+        user.id
       );
 
       return reply.send({
