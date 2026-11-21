@@ -1,9 +1,14 @@
 import helmet from "@fastify/helmet";
 import type { FastifyInstance } from "fastify";
 
+import { appConfig } from "../config/index.js";
+
 export async function registerSecurityHeaders(
   app: FastifyInstance
 ): Promise<void> {
+  const isProduction =
+    appConfig.NODE_ENV === "production";
+
   await app.register(helmet, {
     global: true,
 
@@ -17,6 +22,7 @@ export async function registerSecurityHeaders(
     },
 
     crossOriginEmbedderPolicy: false,
+
     crossOriginResourcePolicy: {
       policy: "same-site",
     },
@@ -25,9 +31,12 @@ export async function registerSecurityHeaders(
       policy: "no-referrer",
     },
 
-    strictTransportSecurity: {
-      maxAge: 31536000,
-      includeSubDomains: true,
-    },
+    strictTransportSecurity: isProduction
+      ? {
+          maxAge: 31536000,
+          includeSubDomains: false,
+          preload: false,
+        }
+      : false,
   });
 }
