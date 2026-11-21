@@ -3,8 +3,6 @@ import { z } from "zod";
 
 import { AppError } from "@matrixhost/shared";
 
-import { authenticate } from "../../middleware/authentication.js";
-
 import {
   loginSchema,
   registerSchema,
@@ -20,74 +18,95 @@ import {
   revokeSession,
 } from "./session.service.js";
 
-const refreshSchema = z.object({
-  refreshToken: z.string().min(32).max(256),
-}).strict();
+const refreshSchema = z
+  .object({
+    refreshToken: z.string().min(32).max(256),
+  })
+  .strict();
+
+const authRateLimit = {
+  config: {
+    rateLimit: {
+      max: 10,
+      timeWindow: "1 minute",
+    },
+  },
+};
 
 export async function authRoutes(
   app: FastifyInstance
 ): Promise<void> {
-  app.post("/register", async (request, reply) => {
-    const parsed = registerSchema.safeParse(request.body);
+  app.post(
+    "/register",
+    authRateLimit,
+    async (request, reply) => {
+      const parsed = registerSchema.safeParse(request.body);
 
-    if (!parsed.success) {
-      throw AppError.badRequest(
-        "Invalid registration data.",
-        parsed.error.flatten()
-      );
+      if (!parsed.success) {
+        throw AppError.badRequest(
+          "Invalid registration data.",
+          parsed.error.flatten()
+        );
+      }
+
+      const user = await registerUser(parsed.data);
+
+      return reply.code(201).send({
+        success: true,
+        data: { user },
+      });
     }
+  );
 
-    const user = await registerUser(parsed.data);
+  app.post(
+    "/login",
+    authRateLimit,
+    async (request, reply) => {
+      const parsed = loginSchema.safeParse(request.body);
 
-    return reply.code(201).send({
-      success: true,
-      data: {
-        user,
-      },
-    });
-  });
+      if (!parsed.success) {
+        throw AppError.badRequest(
+          "Invalid login data.",
+          parsed.error.flatten()
+        );
+      }
 
-  app.post("/login", async (request, reply) => {
-    const parsed = loginSchema.safeParse(request.body);
+      const result = await loginUser(parsed.data);
 
-    if (!parsed.success) {
-      throw AppError.badRequest(
-        "Invalid login data.",
-        parsed.error.flatten()
-      );
+      return reply.send({
+        success: true,
+        data: result,
+      });
     }
+  );
 
-    const result = await loginUser(parsed.data);
+  app.post(
+    "/refresh",
+    authRateLimit,
+    async (request, reply) => {
+      const parsed = refreshSchema.safeParse(request.body);
 
-    return reply.send({
-      success: true,
-      data: result,
-    });
-  });
+      if (!parsed.success) {
+        throw AppError.badRequest(
+          "A valid refresh token is required."
+        );
+      }
 
-  app.post("/refresh", async (request, reply) => {
-    const parsed = refreshSchema.safeParse(request.body);
-
-    if (!parsed.success) {
-      throw AppError.badRequest(
-        "A valid refresh token is required."
+      const result = await refreshSession(
+        parsed.data.refreshToken
       );
+
+      return reply.send({
+        success: true,
+        data: result,
+      });
     }
-
-    const result = await refreshSession(
-      parsed.data.refreshToken
-    );
-
-    return reply.send({
-      success: true,
-      data: result,
-    });
-  });
+  );
 
   app.post(
     "/logout",
     {
-      preHandler: [authenticate],
+      preHandler: [app.authenticate],
     },
     async (request, reply) => {
       const user = request.authUser;
