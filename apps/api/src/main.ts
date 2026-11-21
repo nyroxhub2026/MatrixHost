@@ -9,6 +9,7 @@ import {
   serverRoutes,
   nodeRoutes,
   nodeAgentCredentialRoutes,
+  nodeAgentHeartbeatRoutes,
 } from "./modules/index.js";
 
 import {
@@ -88,6 +89,11 @@ export async function buildApp() {
 
   // Node Agent credential management.
   await app.register(nodeAgentCredentialRoutes, {
+    prefix: "/nodes",
+  });
+
+  // Node Agent heartbeat.
+  await app.register(nodeAgentHeartbeatRoutes, {
     prefix: "/nodes",
   });
 
