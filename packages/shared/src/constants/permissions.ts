@@ -1,0 +1,92 @@
+import { USER_ROLES, type UserRole } from "./roles.js";
+
+export const PERMISSIONS = {
+  VIEW_OWN_SERVERS: "servers.view_own",
+  CREATE_SERVER: "servers.create",
+  START_SERVER: "servers.start",
+  STOP_SERVER: "servers.stop",
+  RESTART_SERVER: "servers.restart",
+  DELETE_SERVER: "servers.delete",
+  VIEW_CONSOLE: "console.view",
+  SEND_CONSOLE_COMMAND: "console.send_command",
+  VIEW_FILES: "files.view",
+  EDIT_FILES: "files.edit",
+  UPLOAD_FILES: "files.upload",
+  DELETE_FILES: "files.delete",
+  CREATE_BACKUP: "backups.create",
+  VIEW_BACKUPS: "backups.view",
+  RESTORE_BACKUP: "backups.restore",
+  MANAGE_SUBUSERS: "subusers.manage",
+  VIEW_NODES: "nodes.view",
+  MANAGE_NODES: "nodes.manage",
+  MANAGE_EGGS: "eggs.manage",
+  MANAGE_USERS: "users.manage",
+  MANAGE_SERVERS: "servers.manage",
+  MANAGE_SETTINGS: "settings.manage",
+  VIEW_AUDIT_LOGS: "audit_logs.view"
+} as const;
+
+export type Permission =
+  (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
+  [USER_ROLES.SUPER_ADMIN]: Object.values(PERMISSIONS),
+
+  [USER_ROLES.ADMIN]: [
+    PERMISSIONS.VIEW_OWN_SERVERS,
+    PERMISSIONS.CREATE_SERVER,
+    PERMISSIONS.START_SERVER,
+    PERMISSIONS.STOP_SERVER,
+    PERMISSIONS.RESTART_SERVER,
+    PERMISSIONS.DELETE_SERVER,
+    PERMISSIONS.VIEW_CONSOLE,
+    PERMISSIONS.SEND_CONSOLE_COMMAND,
+    PERMISSIONS.VIEW_FILES,
+    PERMISSIONS.EDIT_FILES,
+    PERMISSIONS.UPLOAD_FILES,
+    PERMISSIONS.DELETE_FILES,
+    PERMISSIONS.CREATE_BACKUP,
+    PERMISSIONS.VIEW_BACKUPS,
+    PERMISSIONS.RESTORE_BACKUP,
+    PERMISSIONS.MANAGE_SUBUSERS,
+    PERMISSIONS.VIEW_NODES,
+    PERMISSIONS.MANAGE_NODES,
+    PERMISSIONS.MANAGE_EGGS,
+    PERMISSIONS.MANAGE_USERS,
+    PERMISSIONS.MANAGE_SERVERS,
+    PERMISSIONS.VIEW_AUDIT_LOGS
+  ],
+
+  [USER_ROLES.SUPPORT]: [
+    PERMISSIONS.VIEW_OWN_SERVERS,
+    PERMISSIONS.VIEW_CONSOLE,
+    PERMISSIONS.VIEW_FILES,
+    PERMISSIONS.VIEW_BACKUPS,
+    PERMISSIONS.VIEW_NODES
+  ],
+
+  [USER_ROLES.CUSTOMER]: [
+    PERMISSIONS.VIEW_OWN_SERVERS,
+    PERMISSIONS.START_SERVER,
+    PERMISSIONS.STOP_SERVER,
+    PERMISSIONS.RESTART_SERVER,
+    PERMISSIONS.VIEW_CONSOLE,
+    PERMISSIONS.SEND_CONSOLE_COMMAND,
+    PERMISSIONS.VIEW_FILES,
+    PERMISSIONS.EDIT_FILES,
+    PERMISSIONS.UPLOAD_FILES,
+    PERMISSIONS.CREATE_BACKUP,
+    PERMISSIONS.VIEW_BACKUPS
+  ]
+};
+
+export function roleHasPermission(
+  role: UserRole,
+  permission: Permission
+): boolean {
+  return ROLE_PERMISSIONS[role].includes(permission);
+}
+
+export function getRolePermissions(role: UserRole): readonly Permission[] {
+  return ROLE_PERMISSIONS[role];
+}
