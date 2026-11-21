@@ -17,6 +17,7 @@ export async function createSession(
   role: string
 ) {
   const refreshToken = createRefreshToken();
+
   const expiresAt = new Date(
     Date.now() + SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000
   );
@@ -51,7 +52,11 @@ export async function refreshSession(refreshToken: string) {
   });
 
   if (!session || !session.user) {
-    throw new AppError("Invalid or expired session.", 401, "INVALID_SESSION");
+    throw new AppError(
+      "Invalid or expired session.",
+      401,
+      "INVALID_SESSION"
+    );
   }
 
   const newRefreshToken = createRefreshToken();
@@ -67,12 +72,19 @@ export async function refreshSession(refreshToken: string) {
   });
 
   return {
-    accessToken: createAccessToken(session.user.id, session.user.role),
+    sessionId: session.id,
+    accessToken: createAccessToken(
+      session.user.id,
+      session.user.role
+    ),
     refreshToken: newRefreshToken
   };
 }
 
-export async function revokeSession(sessionId: string, userId: string) {
+export async function revokeSession(
+  sessionId: string,
+  userId: string
+) {
   await prisma.session.deleteMany({
     where: {
       id: sessionId,
