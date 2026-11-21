@@ -1,3 +1,4 @@
+
 import type {
   FastifyInstance,
   FastifyReply,
@@ -35,8 +36,8 @@ export async function authenticate(
   const authorization = request.headers.authorization;
 
   if (
-    !authorization ||
-    !authorization.startsWith("Bearer ")
+    typeof authorization !== "string" ||
+    !/^Bearer [A-Za-z0-9_.-]+$/.test(authorization)
   ) {
     throw AppError.unauthorized();
   }
@@ -60,7 +61,9 @@ export async function authenticate(
         gt: new Date(),
       },
     },
-    include: {
+    select: {
+      id: true,
+      userId: true,
       user: {
         select: {
           id: true,
@@ -81,6 +84,17 @@ export async function authenticate(
       "Session is invalid, expired or revoked.",
       401,
       "INVALID_SESSION"
+    );
+  }
+
+  if (
+    session.user.id !== payload.sub ||
+    session.user.role !== payload.role
+  ) {
+    throw new AppError(
+      "Access token is no longer valid.",
+      401,
+      "INVALID_TOKEN"
     );
   }
 
