@@ -1,14 +1,147 @@
 import { loadAgentConfig } from "./config.js";
 import { collectHardwareSnapshot } from "./resources/hardware.js";
-import { AgentHttpClient } from "./protocol/http-client.js";
+
+import {
+  AgentHttpClient,
+  AgentWebSocketClient,
+} from "./protocol/index.js";
+
+import type {
+  AgentWebSocketMessage,
+} from "./protocol/index.js";
 
 async function main(): Promise<void> {
   const config = loadAgentConfig();
-  const client = new AgentHttpClient(config);
+  const httpClient = new AgentHttpClient(config);
 
   let stopped = false;
-  let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
+  let heartbeatTimer:
+    | ReturnType<typeof setTimeout>
+    | undefined;
+
   let activeHeartbeat: Promise<void> | undefined;
+
+  const webSocketClient = new AgentWebSocketClient(
+    config,
+    {
+      onConnected: () => {
+        console.info(
+          "[MatrixHost Agent] WebSocket connected.",
+        );
+      },
+
+      onDisconnected: () => {
+        console.warn(
+          "[MatrixHost Agent] WebSocket disconnected.",
+        );
+      },
+
+      onError: (error) => {
+        console.error(
+          "[MatrixHost Agent] WebSocket error:",
+          error.message,
+        );
+      },
+
+      onMessage: async (
+        message: AgentWebSocketMessage,
+      ) => {
+        await handleWebSocketMessage(message);
+      },
+    },
+  );
+
+  async function handleWebSocketMessage(
+    message: AgentWebSocketMessage,
+  ): Promise<void> {
+    switch (message.type) {
+      case "connected": {
+        if (message.nodeId !== config.NODE_ID) {
+          throw new Error(
+            "WebSocket connected message has an unexpected node ID.",
+          );
+        }
+
+        if (message.protocolVersion !== 1) {
+          throw new Error(
+            "Unsupported WebSocket protocol version.",
+          );
+        }
+
+        console.info(
+          "[MatrixHost Agent] API handshake completed.",
+        );
+
+        break;
+      }
+
+      case "ping": {
+        webSocketClient.send({
+          type: "pong",
+          timestamp: message.timestamp,
+        });
+
+        break;
+      }
+
+      case "pong": {
+        console.debug(
+          "[MatrixHost Agent] Received WebSocket pong.",
+        );
+
+        break;
+      }
+
+      case "job": {
+        console.warn(
+          "[MatrixHost Agent] Received a job, but job execution is not enabled yet.",
+          {
+            jobId: message.job.id,
+            jobType: message.job.type,
+          },
+        );
+
+        webSocketClient.send({
+          type: "job_ack",
+          jobId: message.job.id,
+          accepted: false,
+        });
+
+        break;
+      }
+
+      case "job_ack": {
+        console.info(
+          "[MatrixHost Agent] Job acknowledgement received.",
+          {
+            jobId: message.jobId,
+            accepted: message.accepted,
+          },
+        );
+
+        break;
+      }
+
+      case "job_result": {
+        console.info(
+          "[MatrixHost Agent] Job result received.",
+          {
+            jobId: message.jobId,
+            success: message.success,
+          },
+        );
+
+        break;
+      }
+
+      default: {
+        const exhaustiveCheck: never = message;
+        throw new Error(
+          `Unsupported message: ${String(exhaustiveCheck)}`,
+        );
+      }
+    }
+  }
 
   async function sendHeartbeat(): Promise<void> {
     if (stopped || activeHeartbeat) {
@@ -17,17 +150,20 @@ async function main(): Promise<void> {
 
     activeHeartbeat = (async () => {
       try {
-        const hardware = await collectHardwareSnapshot();
+        const hardware =
+          await collectHardwareSnapshot();
 
-        await client.sendHeartbeat(hardware);
+        await httpClient.sendHeartbeat(hardware);
 
         console.info(
-          `[MatrixHost Agent] Heartbeat sent successfully. Node: ${config.NODE_ID}`,
+          "[MatrixHost Agent] Heartbeat sent successfully.",
         );
       } catch (error) {
         console.error(
           "[MatrixHost Agent] Heartbeat failed:",
-          error instanceof Error ? error.message : "Unknown error",
+          error instanceof Error
+            ? error.message
+            : "Unknown error.",
         );
       } finally {
         activeHeartbeat = undefined;
@@ -43,11 +179,15 @@ async function main(): Promise<void> {
     }
 
     heartbeatTimer = setTimeout(() => {
-      void sendHeartbeat().finally(scheduleHeartbeat);
+      void sendHeartbeat().finally(
+        scheduleHeartbeat,
+      );
     }, config.HEARTBEAT_INTERVAL_MS);
   }
 
-  async function shutdown(signal: string): Promise<void> {
+  async function shutdown(
+    signal: string,
+  ): Promise<void> {
     if (stopped) {
       return;
     }
@@ -63,11 +203,15 @@ async function main(): Promise<void> {
       heartbeatTimer = undefined;
     }
 
+    await webSocketClient.stop();
+
     if (activeHeartbeat) {
       await activeHeartbeat;
     }
 
-    console.info("[MatrixHost Agent] Shutdown complete.");
+    console.info(
+      "[MatrixHost Agent] Shutdown complete.",
+    );
   }
 
   process.once("SIGINT", () => {
@@ -84,9 +228,9 @@ async function main(): Promise<void> {
       error,
     );
 
-    void shutdown("UNCAUGHT_EXCEPTION").finally(() => {
-      process.exit(1);
-    });
+    void shutdown("UNCAUGHT_EXCEPTION").finally(
+      () => process.exit(1),
+    );
   });
 
   process.on("unhandledRejection", (reason) => {
@@ -95,14 +239,20 @@ async function main(): Promise<void> {
       reason,
     );
 
-    void shutdown("UNHANDLED_REJECTION").finally(() => {
-      process.exit(1);
-    });
+    void shutdown("UNHANDLED_REJECTION").finally(
+      () => process.exit(1),
+    );
   });
 
   console.info("[MatrixHost Agent] Starting...");
-  console.info(`[MatrixHost Agent] Node ID: ${config.NODE_ID}`);
-  console.info(`[MatrixHost Agent] Version: ${config.AGENT_VERSION}`);
+  console.info(
+    `[MatrixHost Agent] Node ID: ${config.NODE_ID}`,
+  );
+  console.info(
+    `[MatrixHost Agent] Version: ${config.AGENT_VERSION}`,
+  );
+
+  webSocketClient.start();
 
   await sendHeartbeat();
   scheduleHeartbeat();
