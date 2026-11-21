@@ -9,30 +9,48 @@ import type {
 const nodeSelect = {
   id: true,
   name: true,
-  fqdn: true,
-  scheme: true,
-  port: true,
+  description: true,
+  location: true,
   status: true,
+
+  hostname: true,
+  operatingSystem: true,
+  architecture: true,
   cpuModel: true,
-  cpuThreads: true,
+  cpuCores: true,
+
   memoryTotalBytes: true,
   memoryFreeBytes: true,
+  swapTotalBytes: true,
+  swapFreeBytes: true,
   diskTotalBytes: true,
   diskFreeBytes: true,
+
   cpuAllocatable: true,
   memoryAllocatableBytes: true,
   swapAllocatableBytes: true,
   diskAllocatableBytes: true,
-  dockerVersion: true,
+
+  publicAddress: true,
+  listenAddress: true,
+  listenPort: true,
+  tlsEnabled: true,
+
+  memoryOverallocatePercent: true,
+  diskOverallocatePercent: true,
+  cpuOverallocatePercent: true,
+
   agentVersion: true,
+  dockerVersion: true,
   lastHeartbeatAt: true,
+
   createdAt: true,
   updatedAt: true,
 } as const;
 
-function serializeNode<T extends Record<string, unknown>>(
-  node: T
-) {
+function serializeNode<
+  T extends Record<string, unknown>
+>(node: T) {
   return Object.fromEntries(
     Object.entries(node).map(([key, value]) => [
       key,
@@ -62,16 +80,22 @@ export async function createNode(
     const node = await prisma.node.create({
       data: {
         name: input.name,
-        fqdn: input.fqdn,
-        scheme: input.scheme,
-        port: input.port,
-        cpuAllocatable: input.resources.cpuAllocatable,
+        publicAddress: input.publicAddress,
+        listenAddress: input.listenAddress,
+        listenPort: input.listenPort,
+        tlsEnabled: input.tlsEnabled,
+
+        cpuAllocatable:
+          input.resources.cpuAllocatable,
+
         memoryAllocatableBytes: BigInt(
           input.resources.memoryAllocatableBytes
         ),
+
         swapAllocatableBytes: BigInt(
           input.resources.swapAllocatableBytes
         ),
+
         diskAllocatableBytes: BigInt(
           input.resources.diskAllocatableBytes
         ),
@@ -93,7 +117,9 @@ export async function createNode(
   }
 }
 
-export async function getNodeById(nodeId: string) {
+export async function getNodeById(
+  nodeId: string
+) {
   const node = await prisma.node.findUnique({
     where: { id: nodeId },
     select: nodeSelect,
@@ -126,35 +152,48 @@ export async function updateNode(
   try {
     const node = await prisma.node.update({
       where: { id: nodeId },
+
       data: {
         ...(input.name !== undefined
           ? { name: input.name }
           : {}),
-        ...(input.fqdn !== undefined
-          ? { fqdn: input.fqdn }
+
+        ...(input.publicAddress !== undefined
+          ? { publicAddress: input.publicAddress }
           : {}),
-        ...(input.scheme !== undefined
-          ? { scheme: input.scheme }
+
+        ...(input.listenAddress !== undefined
+          ? { listenAddress: input.listenAddress }
           : {}),
-        ...(input.port !== undefined
-          ? { port: input.port }
+
+        ...(input.listenPort !== undefined
+          ? { listenPort: input.listenPort }
           : {}),
+
+        ...(input.tlsEnabled !== undefined
+          ? { tlsEnabled: input.tlsEnabled }
+          : {}),
+
         ...(resources !== undefined
           ? {
               cpuAllocatable:
                 resources.cpuAllocatable,
+
               memoryAllocatableBytes: BigInt(
                 resources.memoryAllocatableBytes
               ),
+
               swapAllocatableBytes: BigInt(
                 resources.swapAllocatableBytes
               ),
+
               diskAllocatableBytes: BigInt(
                 resources.diskAllocatableBytes
               ),
             }
           : {}),
       },
+
       select: nodeSelect,
     });
 
