@@ -1,28 +1,45 @@
 import { prisma } from "@matrixhost/database";
 import { AppError } from "@matrixhost/shared";
+
 import type {
   ChangePasswordInput,
-  UpdateProfileInput
+  UpdateProfileInput,
 } from "./user.schemas.js";
+
 import {
   hashPassword,
-  verifyPassword
+  verifyPassword,
 } from "../auth/password.service.js";
+
+function isUniqueConstraintError(
+  error: unknown
+): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "P2002"
+  );
+}
 
 export async function getUserProfile(userId: string) {
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: {
+      id: userId,
+    },
     select: {
       id: true,
       email: true,
       username: true,
       role: true,
-      createdAt: true
-    }
+      status: true,
+      emailVerified: true,
+      createdAt: true,
+    },
   });
 
   if (!user) {
-    throw new AppError("User not found.", 404, "USER_NOT_FOUND");
+    throw AppError.notFound("User not found.");
   }
 
   return user;
@@ -32,30 +49,46 @@ export async function updateUserProfile(
   userId: string,
   input: UpdateProfileInput
 ) {
-  if (input.username) {
-    const existing = await prisma.user.findFirst({
+  try {
+    return await prisma.user.update({
       where: {
-        username: input.username,
-        NOT: { id: userId }
-      }
+        id: userId,
+      },
+      data: {
+        ...(input.username !== undefined
+          ? { username: input.username }
+          : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+        status: true,
+        emailVerified: true,
+        createdAt: true,
+      },
     });
-
-    if (existing) {
-      throw new AppError("Username is already taken.", 409, "USERNAME_EXISTS");
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new AppError(
+        "Username is already taken.",
+        409,
+        "USERNAME_EXISTS"
+      );
     }
+
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "P2025"
+    ) {
+      throw AppError.notFound("User not found.");
+    }
+
+    throw error;
   }
-
-  return prisma.user.update({
-    where: { id: userId },
-    data: input,
-    select: {
-      id: true,
-      email: true,
-      username: true,
-      role: true,
-      createdAt: true
-    }
-  });
 }
 
 export async function changeUserPassword(
@@ -63,11 +96,17 @@ export async function changeUserPassword(
   input: ChangePasswordInput
 ) {
   const user = await prisma.user.findUnique({
-    where: { id: userId }
+    where: {
+      id: userId,
+    },
+    select: {
+      id: true,
+      passwordHash: true,
+    },
   });
 
   if (!user) {
-    throw new AppError("User not found.", 404, "USER_NOT_FOUND");
+    throw AppError.notFound("User not found.");
   }
 
   const valid = await verifyPassword(
@@ -83,17 +122,28 @@ export async function changeUserPassword(
     );
   }
 
-  const passwordHash = await hashPassword(input.newPassword);
+  const passwordHash = await hashPassword(
+    input.newPassword
+  );
 
   await prisma.$transaction([
     prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash }
+      where: {
+        id: userId,
+      },
+      data: {
+        passwordHash,
+      },
     }),
     prisma.session.deleteMany({
-      where: { userId }
-    })
+      where: {
+        userId,
+      },
+    }),
   ]);
 
-  return { success: true };
+  return {
+    success: true,
+    message: "Password changed. Please log in again.",
+  };
 }
