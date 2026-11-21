@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@matrixhost/database";
@@ -33,9 +32,7 @@ function toSafeNumber(
   const result = Number(value);
 
   if (!Number.isSafeInteger(result) || result < 0) {
-    throw new Error(
-      `Invalid or unsafe ${field} value.`,
-    );
+    throw new Error(`Invalid ${field} value.`);
   }
 
   return result;
@@ -49,9 +46,7 @@ function parseEnvironment(
     typeof value !== "object" ||
     Array.isArray(value)
   ) {
-    throw new Error(
-      "Server environment must be a JSON object.",
-    );
+    throw new Error("Invalid server environment.");
   }
 
   const result: Record<string, string> = {};
@@ -62,75 +57,130 @@ function parseEnvironment(
       typeof entry !== "string" ||
       entry.length > 4096
     ) {
-      throw new Error(
-        "Server contains an invalid environment variable.",
-      );
+      throw new Error("Invalid environment variable.");
     }
 
     result[key] = entry;
   }
 
   if (Object.keys(result).length > 100) {
-    throw new Error(
-      "Server has too many environment variables.",
-    );
+    throw new Error("Too many environment variables.");
   }
 
   return result;
 }
 
 async function buildJobPayload(
-  jobId: string,
+  job: {
+    type: SupportedJobType;
+    serverId: string | null;
+    nodeId: string;
+    server: {
+      id: string;
+      nodeId: string;
+      dockerImage: string;
+      startupCommand: string;
+      environment: Prisma.JsonValue;
+      memoryLimitBytes: bigint;
+      swapLimitBytes: bigint;
+      diskLimitBytes: bigint;
+      cpuLimit: number;
+    } | null;
+  },
 ): Promise<Record<string, unknown>> {
-  const job = await prisma.nodeJob.findUnique({
-    where: { id: jobId },
-    include: {
-      server: true,
-    },
-  });
+  if (!job.serverId || !job.server) {
+    throw new Error("Associated server was not found.");
+  }
 
-  if (!job || !job.server) {
-    throw new Error(
-      "The server associated with this job was not found.",
-    );
+  if (
+    job.server.id !== job.serverId ||
+    job.server.nodeId !== job.nodeId
+  ) {
+    throw new Error("Server-node relationship is invalid.");
   }
 
   if (job.type !== "CREATE_SERVER") {
     return {};
   }
 
-  const server = job.server;
+  if (
+    !Number.isFinite(job.server.cpuLimit) ||
+    job.server.cpuLimit <= 0
+  ) {
+    throw new Error("Invalid CPU limit.");
+  }
 
   return {
-    image: server.dockerImage,
-    startup: server.startupCommand,
-    environment: parseEnvironment(server.environment),
+    image: job.server.dockerImage,
+    startup: job.server.startupCommand,
+    environment: parseEnvironment(job.server.environment),
     limits: {
       memoryBytes: toSafeNumber(
-        server.memoryLimitBytes,
+        job.server.memoryLimitBytes,
         "memory",
       ),
       swapBytes: toSafeNumber(
-        server.swapLimitBytes,
+        job.server.swapLimitBytes,
         "swap",
       ),
       diskBytes: toSafeNumber(
-        server.diskLimitBytes,
+        job.server.diskLimitBytes,
         "disk",
       ),
-      cpuPercent: server.cpuLimit * 100,
+      cpuPercent: job.server.cpuLimit * 100,
     },
   };
 }
 
+async function failInvalidJob(
+  jobId: string,
+  nodeId: string,
+  connectionId: string,
+  serverId: string | null,
+  type: SupportedJobType,
+): Promise<void> {
+  const now = new Date();
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.nodeJob.updateMany({
+      where: {
+        id: jobId,
+        nodeId,
+        lockedBy: connectionId,
+        status: "DELIVERED",
+      },
+      data: {
+        status: "FAILED",
+        finishedAt: now,
+        lockedBy: null,
+        leaseExpiresAt: null,
+        errorCode: "INVALID_JOB_CONFIGURATION",
+        errorMessage:
+          "The job configuration could not be prepared.",
+      },
+    });
+
+    if (type === "CREATE_SERVER" && serverId) {
+      await transaction.server.updateMany({
+        where: {
+          id: serverId,
+          nodeId,
+          status: "INSTALLING",
+        },
+        data: {
+          status: "ERROR",
+        },
+      });
+    }
+  });
+}
+
 export async function claimNextNodeJob(
   nodeId: string,
-  connectionId = randomUUID(),
+  connectionId: string,
 ): Promise<ClaimedAgentJob | null> {
   const now = new Date();
 
-  // Expired jobs that exhausted their retry limit
-  // must not remain stuck forever.
   await prisma.nodeJob.updateMany({
     where: {
       nodeId,
@@ -150,7 +200,8 @@ export async function claimNextNodeJob(
       lockedBy: null,
       leaseExpiresAt: null,
       errorCode: "JOB_LEASE_EXPIRED",
-      errorMessage: "Job lease expired after maximum attempts.",
+      errorMessage:
+        "Job lease expired after maximum attempts.",
     },
   });
 
@@ -167,9 +218,7 @@ export async function claimNextNodeJob(
         lte: now,
       },
       OR: [
-        {
-          status: "QUEUED",
-        },
+        { status: "QUEUED" },
         {
           status: {
             in: ["DELIVERED", "RUNNING"],
@@ -179,6 +228,9 @@ export async function claimNextNodeJob(
           },
         },
       ],
+    },
+    include: {
+      server: true,
     },
     orderBy: [
       { availableAt: "asc" },
@@ -190,16 +242,13 @@ export async function claimNextNodeJob(
     return null;
   }
 
-  // Compare updatedAt to avoid claiming the same job
-  // from two concurrent WebSocket connections.
   const claimed = await prisma.nodeJob.updateMany({
     where: {
       id: job.id,
+      nodeId,
       updatedAt: job.updatedAt,
       OR: [
-        {
-          status: "QUEUED",
-        },
+        { status: "QUEUED" },
         {
           status: {
             in: ["DELIVERED", "RUNNING"],
@@ -228,32 +277,32 @@ export async function claimNextNodeJob(
   }
 
   try {
-    const payload = await buildJobPayload(job.id);
+    if (!job.serverId || !job.server) {
+      throw new Error("Server is missing.");
+    }
+
+    const payload = await buildJobPayload({
+      type: job.type as SupportedJobType,
+      serverId: job.serverId,
+      nodeId: job.nodeId,
+      server: job.server,
+    });
 
     return {
       id: job.id,
       type: job.type as SupportedJobType,
-      serverId: job.serverId!,
+      serverId: job.serverId,
       payload,
       attempt: job.attempts + 1,
     };
   } catch {
-    await prisma.nodeJob.updateMany({
-      where: {
-        id: job.id,
-        lockedBy: connectionId,
-        status: "DELIVERED",
-      },
-      data: {
-        status: "FAILED",
-        finishedAt: new Date(),
-        lockedBy: null,
-        leaseExpiresAt: null,
-        errorCode: "INVALID_JOB_CONFIGURATION",
-        errorMessage:
-          "The job configuration could not be prepared.",
-      },
-    });
+    await failInvalidJob(
+      job.id,
+      nodeId,
+      connectionId,
+      job.serverId,
+      job.type as SupportedJobType,
+    );
 
     return null;
   }
