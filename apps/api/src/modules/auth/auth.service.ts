@@ -16,14 +16,29 @@ import {
   createSession,
 } from "./session.service.js";
 
-export async function registerUser(input: RegisterInput) {
-  const email = input.email.toLowerCase();
+function isPrismaError(
+  error: unknown,
+  code: string
+): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  );
+}
+
+export async function registerUser(
+  input: RegisterInput
+) {
+  const email = input.email.trim().toLowerCase();
+  const username = input.username.trim();
 
   const existing = await prisma.user.findFirst({
     where: {
       OR: [
         { email },
-        { username: input.username },
+        { username },
       ],
     },
     select: {
@@ -39,13 +54,15 @@ export async function registerUser(input: RegisterInput) {
     );
   }
 
-  const passwordHash = await hashPassword(input.password);
+  const passwordHash = await hashPassword(
+    input.password
+  );
 
   try {
-    const user = await prisma.user.create({
+    return await prisma.user.create({
       data: {
         email,
-        username: input.username,
+        username,
         passwordHash,
         role: "CUSTOMER",
         status: "PENDING",
@@ -61,15 +78,8 @@ export async function registerUser(input: RegisterInput) {
         createdAt: true,
       },
     });
-
-    return user;
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "P2002"
-    ) {
+    if (isPrismaError(error, "P2002")) {
       throw new AppError(
         "An account with this email or username already exists.",
         409,
@@ -81,8 +91,10 @@ export async function registerUser(input: RegisterInput) {
   }
 }
 
-export async function loginUser(input: LoginInput) {
-  const email = input.email.toLowerCase();
+export async function loginUser(
+  input: LoginInput
+) {
+  const email = input.email.trim().toLowerCase();
 
   const user = await prisma.user.findUnique({
     where: {
@@ -90,13 +102,20 @@ export async function loginUser(input: LoginInput) {
     },
   });
 
-  if (
-    !user ||
-    !(await verifyPassword(
-      input.password,
-      user.passwordHash
-    ))
-  ) {
+  if (!user) {
+    throw new AppError(
+      "Invalid email or password.",
+      401,
+      "INVALID_CREDENTIALS"
+    );
+  }
+
+  const passwordIsValid = await verifyPassword(
+    input.password,
+    user.passwordHash
+  );
+
+  if (!passwordIsValid) {
     throw new AppError(
       "Invalid email or password.",
       401,
