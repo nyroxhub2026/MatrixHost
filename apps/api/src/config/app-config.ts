@@ -1,40 +1,88 @@
 import { z } from "zod";
 
-const appConfigSchema = z.object({
-  NODE_ENV: z
-    .enum(["development", "production", "test"])
-    .default("development"),
+const appConfigSchema = z
+  .object({
+    NODE_ENV: z
+      .enum(["development", "production", "test"])
+      .default("development"),
 
-  API_HOST: z.string().default("0.0.0.0"),
+    API_HOST: z
+      .string()
+      .trim()
+      .min(1)
+      .default("0.0.0.0"),
 
-  API_PORT: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(65535)
-    .default(3001),
+    API_PORT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(65535)
+      .default(3001),
 
-  PANEL_URL: z.url().default("http://localhost:3000"),
+    PANEL_URL: z
+      .url()
+      .default("http://localhost:3000"),
 
-  LOG_LEVEL: z
-    .enum([
-      "fatal",
-      "error",
-      "warn",
-      "info",
-      "debug",
-      "trace",
-      "silent",
-    ])
-    .default("info"),
-});
+    LOG_LEVEL: z
+      .enum([
+        "fatal",
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "trace",
+        "silent",
+      ])
+      .default("info"),
+  })
+  .superRefine((config, context) => {
+    let url: URL;
 
-export type AppConfig = z.infer<typeof appConfigSchema>;
+    try {
+      url = new URL(config.PANEL_URL);
+    } catch {
+      context.addIssue({
+        code: "custom",
+        path: ["PANEL_URL"],
+        message: "PANEL_URL must be a valid URL.",
+      });
+      return;
+    }
+
+    if (
+      url.protocol !== "http:" &&
+      url.protocol !== "https:"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["PANEL_URL"],
+        message: "PANEL_URL must use HTTP or HTTPS.",
+      });
+    }
+
+    if (
+      config.NODE_ENV === "production" &&
+      url.protocol !== "https:"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["PANEL_URL"],
+        message:
+          "Production PANEL_URL must use HTTPS.",
+      });
+    }
+  });
+
+export type AppConfig = z.infer<
+  typeof appConfigSchema
+>;
 
 export function loadAppConfig(
   environment: NodeJS.ProcessEnv = process.env
 ): AppConfig {
-  const result = appConfigSchema.safeParse(environment);
+  const result = appConfigSchema.safeParse(
+    environment
+  );
 
   if (!result.success) {
     throw new Error(
