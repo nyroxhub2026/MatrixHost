@@ -8,9 +8,18 @@ export class AppError extends Error {
     message: string,
     statusCode = 500,
     code = "INTERNAL_ERROR",
-    details?: unknown
+    details?: unknown,
+    options?: ErrorOptions
   ) {
-    super(message);
+    super(message, options);
+
+    if (
+      !Number.isInteger(statusCode) ||
+      statusCode < 400 ||
+      statusCode > 599
+    ) {
+      throw new RangeError("Invalid HTTP error status code.");
+    }
 
     this.name = "AppError";
     this.statusCode = statusCode;
@@ -21,31 +30,54 @@ export class AppError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 
-  static badRequest(message: string, details?: unknown): AppError {
+  static badRequest(
+    message: string,
+    details?: unknown
+  ): AppError {
     return new AppError(message, 400, "BAD_REQUEST", details);
   }
 
-  static unauthorized(message = "Authentication required"): AppError {
+  static unauthorized(
+    message = "Authentication required"
+  ): AppError {
     return new AppError(message, 401, "UNAUTHORIZED");
   }
 
-  static forbidden(message = "Permission denied"): AppError {
+  static forbidden(
+    message = "Permission denied"
+  ): AppError {
     return new AppError(message, 403, "FORBIDDEN");
   }
 
-  static notFound(message = "Resource not found"): AppError {
+  static notFound(
+    message = "Resource not found"
+  ): AppError {
     return new AppError(message, 404, "NOT_FOUND");
   }
 
-  static conflict(message: string): AppError {
-    return new AppError(message, 409, "CONFLICT");
+  static conflict(
+    message: string,
+    details?: unknown
+  ): AppError {
+    return new AppError(message, 409, "CONFLICT", details);
   }
 
-  static tooManyRequests(message = "Too many requests"): AppError {
+  static tooManyRequests(
+    message = "Too many requests"
+  ): AppError {
     return new AppError(message, 429, "TOO_MANY_REQUESTS");
   }
 
-  static internal(message = "Internal server error"): AppError {
-    return new AppError(message, 500, "INTERNAL_ERROR");
+  static internal(
+    message = "Internal server error",
+    cause?: unknown
+  ): AppError {
+    return new AppError(
+      message,
+      500,
+      "INTERNAL_ERROR",
+      undefined,
+      cause === undefined ? undefined : { cause }
+    );
   }
 }
