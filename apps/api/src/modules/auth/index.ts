@@ -2,3 +2,5 @@ export * from "./auth.schemas.js";
 export * from "./password.service.js";
 export * from "./token.service.js";
 export * from "./auth.service.js";
+export * from "./session.service.js";
+export * from "./auth.routes.js";
