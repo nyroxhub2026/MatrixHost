@@ -6,7 +6,28 @@ export async function registerSecurityHeaders(
 ): Promise<void> {
   await app.register(helmet, {
     global: true,
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false
+
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'none'"],
+      },
+    },
+
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: {
+      policy: "same-site",
+    },
+
+    referrerPolicy: {
+      policy: "no-referrer",
+    },
+
+    strictTransportSecurity: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+    },
   });
 }
