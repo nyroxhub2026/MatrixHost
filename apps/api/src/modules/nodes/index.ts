@@ -9,3 +9,5 @@ export * from "./node-agent-credential.routes.js";
 
 export * from "./node-agent-heartbeat.service.js";
 export * from "./node-agent-heartbeat.routes.js";
+
+export * from "./node-agent-websocket.routes.js";
