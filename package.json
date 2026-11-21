@@ -1,0 +1,33 @@
+
+{
+  "name": "matrixhost",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MatrixHost - Independent Game Hosting Platform",
+  "license": "MIT",
+  "packageManager": "pnpm@10.22.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "start": "turbo start",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "clean": "turbo clean",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @matrixhost/database db:generate",
+    "db:migrate": "pnpm --filter @matrixhost/database db:migrate",
+    "db:deploy": "pnpm --filter @matrixhost/database db:deploy",
+    "db:studio": "pnpm --filter @matrixhost/database db:studio"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "^2.6.0",
+    "typescript": "^5.9.3"
+  }
+}
