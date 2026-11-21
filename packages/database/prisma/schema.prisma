@@ -120,11 +120,11 @@ model User {
   updatedAt        DateTime   @updatedAt
 
   sessions       Session[]
-  servers        Server[]                @relation("ServerOwner")
+  servers        Server[]               @relation("ServerOwner")
   serverSubusers ServerSubuser[]
-  auditLogs      AuditLog[]              @relation("AuditActor")
+  auditLogs      AuditLog[]             @relation("AuditActor")
   supportTickets SupportTicket[]
-  ticketMessages SupportTicketMessage[]  @relation("TicketMessageAuthor")
+  ticketMessages SupportTicketMessage[] @relation("TicketMessageAuthor")
 
   @@index([role])
   @@index([status])
@@ -191,9 +191,23 @@ model Node {
   allocations          Allocation[]
   jobs                 NodeJob[]
   resourceReservations NodeResourceReservation[]
+  agentCredential      NodeAgentCredential?
 
   @@index([status])
   @@index([lastHeartbeatAt])
+}
+
+model NodeAgentCredential {
+  id             String   @id @default(uuid()) @db.Uuid
+  nodeId         String   @unique @db.Uuid
+  credentialHash String   @db.VarChar(64)
+  revokedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([revokedAt])
 }
 
 model Egg {
@@ -328,17 +342,17 @@ model NodeJob {
 }
 
 model NodeResourceReservation {
-  id         String                    @id @default(uuid()) @db.Uuid
-  nodeId     String                    @db.Uuid
-  serverId   String                    @unique @db.Uuid
+  id          String                    @id @default(uuid()) @db.Uuid
+  nodeId      String                    @db.Uuid
+  serverId    String                    @unique @db.Uuid
 
-  cpu        Float
+  cpu         Float
   memoryBytes BigInt
   swapBytes   BigInt
   diskBytes   BigInt
 
-  status     ResourceReservationStatus @default(ACTIVE)
-  releasedAt DateTime?
+  status      ResourceReservationStatus @default(ACTIVE)
+  releasedAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
