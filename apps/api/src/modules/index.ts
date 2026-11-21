@@ -6,3 +6,4 @@ export { serverRoutes } from "./servers/index.js";
 export { nodeRoutes } from "./nodes/index.js";
 export { nodeAgentCredentialRoutes } from "./nodes/index.js";
 export { nodeAgentHeartbeatRoutes } from "./nodes/index.js";
+export { nodeAgentWebSocketRoutes } from "./nodes/index.js";
