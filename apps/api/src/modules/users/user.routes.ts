@@ -1,71 +1,107 @@
 import type { FastifyInstance } from "fastify";
+
+import { AppError } from "@matrixhost/shared";
+
 import { authenticate } from "../../middleware/authentication.js";
+
 import {
   changePasswordSchema,
-  updateProfileSchema
+  updateProfileSchema,
 } from "./user.schemas.js";
+
 import {
   changeUserPassword,
   getUserProfile,
-  updateUserProfile
+  updateUserProfile,
 } from "./user.service.js";
 
-export async function userRoutes(app: FastifyInstance): Promise<void> {
+export async function userRoutes(
+  app: FastifyInstance
+): Promise<void> {
   app.get(
-    "/users/me",
+    "/me",
     { preHandler: authenticate },
     async (request) => {
+      const user = request.authUser;
+
+      if (!user) {
+        throw AppError.unauthorized();
+      }
+
       return {
-        user: await getUserProfile(request.authUser!.id)
+        success: true,
+        data: {
+          user: await getUserProfile(user.id),
+        },
       };
     }
   );
 
   app.patch(
-    "/users/me",
+    "/me",
     { preHandler: authenticate },
-    async (request, reply) => {
-      const parsed = updateProfileSchema.safeParse(request.body);
+    async (request) => {
+      const user = request.authUser;
 
-      if (!parsed.success) {
-        return reply.status(400).send({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid profile data."
-          }
-        });
+      if (!user) {
+        throw AppError.unauthorized();
       }
 
+      const parsed = updateProfileSchema.safeParse(
+        request.body
+      );
+
+      if (!parsed.success) {
+        throw AppError.badRequest(
+          "Invalid profile data.",
+          parsed.error.flatten()
+        );
+      }
+
+      const updatedUser = await updateUserProfile(
+        user.id,
+        parsed.data
+      );
+
       return {
-        user: await updateUserProfile(
-          request.authUser!.id,
-          parsed.data
-        )
+        success: true,
+        data: {
+          user: updatedUser,
+        },
       };
     }
   );
 
   app.post(
-    "/users/me/password",
+    "/me/password",
     { preHandler: authenticate },
-    async (request, reply) => {
-      const parsed = changePasswordSchema.safeParse(request.body);
+    async (request) => {
+      const user = request.authUser;
 
-      if (!parsed.success) {
-        return reply.status(400).send({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid password data."
-          }
-        });
+      if (!user) {
+        throw AppError.unauthorized();
       }
 
-      await changeUserPassword(
-        request.authUser!.id,
+      const parsed = changePasswordSchema.safeParse(
+        request.body
+      );
+
+      if (!parsed.success) {
+        throw AppError.badRequest(
+          "Invalid password data.",
+          parsed.error.flatten()
+        );
+      }
+
+      const result = await changeUserPassword(
+        user.id,
         parsed.data
       );
 
-      return reply.send({ success: true });
+      return {
+        success: true,
+        data: result,
+      };
     }
   );
 }
