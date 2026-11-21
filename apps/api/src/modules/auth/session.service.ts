@@ -1,15 +1,29 @@
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createHash,
+  randomUUID,
+} from "node:crypto";
+
 import { prisma } from "@matrixhost/database";
 import { AppError } from "@matrixhost/shared";
+
 import {
   createAccessToken,
-  createRefreshToken
+  createRefreshToken,
 } from "./token.service.js";
 
 const SESSION_DURATION_DAYS = 30;
 
 function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
+  return createHash("sha256")
+    .update(token)
+    .digest("hex");
+}
+
+function getExpirationDate(): Date {
+  return new Date(
+    Date.now() +
+      SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000
+  );
 }
 
 export async function createSession(
@@ -18,35 +32,51 @@ export async function createSession(
 ) {
   const refreshToken = createRefreshToken();
 
-  const expiresAt = new Date(
-    Date.now() + SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000
-  );
-
   const session = await prisma.session.create({
     data: {
       id: randomUUID(),
       userId,
       refreshHash: hashToken(refreshToken),
-      expiresAt
-    }
+      expiresAt: getExpirationDate(),
+    },
   });
 
   return {
     sessionId: session.id,
     refreshToken,
-    accessToken: createAccessToken(userId, role)
+    accessToken: createAccessToken(userId, role),
   };
 }
 
-export async function refreshSession(refreshToken: string) {
+export async function refreshSession(
+  refreshToken: string
+) {
+  if (
+    typeof refreshToken !== "string" ||
+    refreshToken.length < 32 ||
+    refreshToken.length > 256
+  ) {
+    throw new AppError(
+      "Invalid refresh token.",
+      401,
+      "INVALID_SESSION"
+    );
+  }
+
+  const currentHash = hashToken(refreshToken);
+  const newRefreshToken = createRefreshToken();
+  const newHash = hashToken(newRefreshToken);
+
   const session = await prisma.session.findFirst({
     where: {
-      refreshHash: hashToken(refreshToken),
-      expiresAt: { gt: new Date() }
+      refreshHash: currentHash,
+      expiresAt: {
+        gt: new Date(),
+      },
     },
     include: {
-      user: true
-    }
+      user: true,
+    },
   });
 
   if (!session) {
@@ -57,17 +87,43 @@ export async function refreshSession(refreshToken: string) {
     );
   }
 
-  const newRefreshToken = createRefreshToken();
+  if (
+    session.user.status !== "ACTIVE" ||
+    !session.user.emailVerified
+  ) {
+    await prisma.session.deleteMany({
+      where: {
+        id: session.id,
+      },
+    });
 
-  await prisma.session.update({
-    where: { id: session.id },
+    throw AppError.forbidden(
+      "Your account is not active or verified."
+    );
+  }
+
+  const updated = await prisma.session.updateMany({
+    where: {
+      id: session.id,
+      userId: session.userId,
+      refreshHash: currentHash,
+      expiresAt: {
+        gt: new Date(),
+      },
+    },
     data: {
-      refreshHash: hashToken(newRefreshToken),
-      expiresAt: new Date(
-        Date.now() + SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000
-      )
-    }
+      refreshHash: newHash,
+      expiresAt: getExpirationDate(),
+    },
   });
+
+  if (updated.count !== 1) {
+    throw new AppError(
+      "Session has already been refreshed or revoked.",
+      401,
+      "SESSION_REUSED"
+    );
+  }
 
   return {
     sessionId: session.id,
@@ -75,7 +131,7 @@ export async function refreshSession(refreshToken: string) {
       session.user.id,
       session.user.role
     ),
-    refreshToken: newRefreshToken
+    refreshToken: newRefreshToken,
   };
 }
 
@@ -86,13 +142,17 @@ export async function revokeSession(
   await prisma.session.deleteMany({
     where: {
       id: sessionId,
-      userId
-    }
+      userId,
+    },
   });
 }
 
-export async function revokeAllSessions(userId: string) {
+export async function revokeAllSessions(
+  userId: string
+) {
   await prisma.session.deleteMany({
-    where: { userId }
+    where: {
+      userId,
+    },
   });
 }
