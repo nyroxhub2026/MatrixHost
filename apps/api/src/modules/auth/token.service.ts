@@ -1,14 +1,16 @@
 import {
   createHmac,
   randomBytes,
-  timingSafeEqual
+  timingSafeEqual,
 } from "node:crypto";
 
 function getSecret(): string {
   const secret = process.env.JWT_ACCESS_SECRET;
 
   if (!secret || secret.length < 32) {
-    throw new Error("JWT_ACCESS_SECRET must contain at least 32 characters.");
+    throw new Error(
+      "JWT_ACCESS_SECRET must contain at least 32 characters."
+    );
   }
 
   return secret;
@@ -16,6 +18,7 @@ function getSecret(): string {
 
 export interface AccessTokenPayload {
   sub: string;
+  sid: string;
   role: string;
   exp: number;
 }
@@ -23,15 +26,27 @@ export interface AccessTokenPayload {
 export function createAccessToken(
   userId: string,
   role: string,
+  sessionId: string,
   expiresInSeconds = 900
 ): string {
+  if (
+    !Number.isInteger(expiresInSeconds) ||
+    expiresInSeconds < 1 ||
+    expiresInSeconds > 3600
+  ) {
+    throw new Error("Invalid access token lifetime.");
+  }
+
   const payload: AccessTokenPayload = {
     sub: userId,
+    sid: sessionId,
     role,
-    exp: Math.floor(Date.now() / 1000) + expiresInSeconds
+    exp: Math.floor(Date.now() / 1000) + expiresInSeconds,
   };
 
-  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const encoded = Buffer
+    .from(JSON.stringify(payload))
+    .toString("base64url");
 
   const signature = createHmac("sha256", getSecret())
     .update(encoded)
@@ -44,23 +59,43 @@ export function verifyAccessToken(
   token: string
 ): AccessTokenPayload | null {
   try {
+    if (
+      typeof token !== "string" ||
+      token.length > 4096
+    ) {
+      return null;
+    }
+
     const parts = token.split(".");
 
-    if (parts.length !== 2) return null;
+    if (parts.length !== 2) {
+      return null;
+    }
 
     const [encoded, suppliedSignature] = parts;
 
-    if (!encoded || !suppliedSignature) return null;
+    if (!encoded || !suppliedSignature) {
+      return null;
+    }
 
-    const expectedSignature = createHmac("sha256", getSecret())
+    const expectedSignature = createHmac(
+      "sha256",
+      getSecret()
+    )
       .update(encoded)
       .digest();
 
-    const actualSignature = Buffer.from(suppliedSignature, "base64url");
+    const actualSignature = Buffer.from(
+      suppliedSignature,
+      "base64url"
+    );
 
     if (
       actualSignature.length !== expectedSignature.length ||
-      !timingSafeEqual(actualSignature, expectedSignature)
+      !timingSafeEqual(
+        actualSignature,
+        expectedSignature
+      )
     ) {
       return null;
     }
@@ -71,8 +106,9 @@ export function verifyAccessToken(
 
     if (
       typeof payload.sub !== "string" ||
+      typeof payload.sid !== "string" ||
       typeof payload.role !== "string" ||
-      typeof payload.exp !== "number" ||
+      !Number.isInteger(payload.exp) ||
       payload.exp <= Math.floor(Date.now() / 1000)
     ) {
       return null;
