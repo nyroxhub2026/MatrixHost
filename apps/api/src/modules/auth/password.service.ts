@@ -18,13 +18,16 @@ const SCRYPT_OPTIONS = {
   maxmem: 64 * 1024 * 1024,
 };
 
+const ALGORITHM = "scrypt";
+const MAX_PASSWORD_LENGTH = 128;
+
 export async function hashPassword(
   password: string
 ): Promise<string> {
   if (
     typeof password !== "string" ||
     password.length < 12 ||
-    password.length > 128
+    password.length > MAX_PASSWORD_LENGTH
   ) {
     throw new Error("Invalid password length.");
   }
@@ -39,10 +42,10 @@ export async function hashPassword(
   )) as Buffer;
 
   return [
-    "scrypt",
-    "32768",
-    "8",
-    "1",
+    ALGORITHM,
+    String(SCRYPT_OPTIONS.N),
+    String(SCRYPT_OPTIONS.r),
+    String(SCRYPT_OPTIONS.p),
     salt,
     derivedKey.toString("hex"),
   ].join("$");
@@ -55,8 +58,9 @@ export async function verifyPassword(
   try {
     if (
       typeof password !== "string" ||
+      password.length === 0 ||
+      password.length > MAX_PASSWORD_LENGTH ||
       typeof storedHash !== "string" ||
-      password.length > 128 ||
       storedHash.length > 512
     ) {
       return false;
@@ -78,18 +82,20 @@ export async function verifyPassword(
     ] = parts;
 
     if (
-      algorithm !== "scrypt" ||
-      cost !== "32768" ||
-      blockSize !== "8" ||
-      parallelization !== "1" ||
-      !salt ||
-      !/^[a-f0-9]{32}$/i.test(salt) ||
-      !/^[a-f0-9]{128}$/i.test(expectedHex)
+      algorithm !== ALGORITHM ||
+      cost !== String(SCRYPT_OPTIONS.N) ||
+      blockSize !== String(SCRYPT_OPTIONS.r) ||
+      parallelization !== String(SCRYPT_OPTIONS.p) ||
+      !/^[a-f0-9]{32}$/i.test(salt ?? "") ||
+      !/^[a-f0-9]{128}$/i.test(expectedHex ?? "")
     ) {
       return false;
     }
 
-    const expected = Buffer.from(expectedHex, "hex");
+    const expected = Buffer.from(
+      expectedHex,
+      "hex"
+    );
 
     const actual = (await scrypt(
       password,
@@ -98,9 +104,13 @@ export async function verifyPassword(
       SCRYPT_OPTIONS
     )) as Buffer;
 
-    return (
-      actual.length === expected.length &&
-      timingSafeEqual(expected, actual)
+    if (actual.length !== expected.length) {
+      return false;
+    }
+
+    return timingSafeEqual(
+      expected,
+      actual
     );
   } catch {
     return false;
