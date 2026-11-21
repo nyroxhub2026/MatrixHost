@@ -1,12 +1,17 @@
-export { serverRoutes } from "./server.routes";
+export { serverRoutes } from "./server.routes.js";
 
 export {
   createServer,
   getServerById,
   listServers,
-} from "./server.service";
+} from "./server.service.js";
 
 export {
   createServerSchema,
   updateServerSchema,
-} from "./server.schemas";
+} from "./server.schemas.js";
+
+export type {
+  CreateServerRequest,
+  UpdateServerRequest,
+} from "./server.schemas.js";
