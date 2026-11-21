@@ -1,11 +1,20 @@
+
 import { prisma } from "@matrixhost/database";
 import { AppError } from "@matrixhost/shared";
-import type { RegisterInput, LoginInput } from "./auth.schemas.js";
-import { hashPassword, verifyPassword } from "./password.service.js";
+
+import type {
+  RegisterInput,
+  LoginInput,
+} from "./auth.schemas.js";
+
 import {
-  createAccessToken,
-  createRefreshToken
-} from "./token.service.js";
+  hashPassword,
+  verifyPassword,
+} from "./password.service.js";
+
+import {
+  createSession,
+} from "./session.service.js";
 
 export async function registerUser(input: RegisterInput) {
   const email = input.email.toLowerCase();
@@ -14,9 +23,12 @@ export async function registerUser(input: RegisterInput) {
     where: {
       OR: [
         { email },
-        { username: input.username }
-      ]
-    }
+        { username: input.username },
+      ],
+    },
+    select: {
+      id: true,
+    },
   });
 
   if (existing) {
@@ -29,47 +41,95 @@ export async function registerUser(input: RegisterInput) {
 
   const passwordHash = await hashPassword(input.password);
 
-  const user = await prisma.user.create({
-    data: {
-      email,
-      username: input.username,
-      passwordHash,
-      role: "CUSTOMER"
-    },
-    select: {
-      id: true,
-      email: true,
-      username: true,
-      role: true,
-      createdAt: true
-    }
-  });
+  try {
+    const user = await prisma.user.create({
+      data: {
+        email,
+        username: input.username,
+        passwordHash,
+        role: "CUSTOMER",
+        status: "PENDING",
+        emailVerified: false,
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+        status: true,
+        emailVerified: true,
+        createdAt: true,
+      },
+    });
 
-  return user;
+    return user;
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "P2002"
+    ) {
+      throw new AppError(
+        "An account with this email or username already exists.",
+        409,
+        "ACCOUNT_EXISTS"
+      );
+    }
+
+    throw error;
+  }
 }
 
 export async function loginUser(input: LoginInput) {
   const email = input.email.toLowerCase();
 
   const user = await prisma.user.findUnique({
-    where: { email }
+    where: {
+      email,
+    },
   });
 
-  if (!user || !(await verifyPassword(input.password, user.passwordHash))) {
-    throw new AppError("Invalid email or password.", 401, "INVALID_CREDENTIALS");
+  if (
+    !user ||
+    !(await verifyPassword(
+      input.password,
+      user.passwordHash
+    ))
+  ) {
+    throw new AppError(
+      "Invalid email or password.",
+      401,
+      "INVALID_CREDENTIALS"
+    );
   }
 
-  const accessToken = createAccessToken(user.id, user.role);
-  const refreshToken = createRefreshToken();
+  if (user.status !== "ACTIVE") {
+    throw AppError.forbidden(
+      "Your account is not active."
+    );
+  }
+
+  if (!user.emailVerified) {
+    throw AppError.forbidden(
+      "Please verify your email before logging in."
+    );
+  }
+
+  const session = await createSession(
+    user.id,
+    user.role
+  );
 
   return {
     user: {
       id: user.id,
       email: user.email,
       username: user.username,
-      role: user.role
+      role: user.role,
     },
-    accessToken,
-    refreshToken
+    sessionId: session.sessionId,
+    accessToken: session.accessToken,
+    refreshToken: session.refreshToken,
   };
 }
