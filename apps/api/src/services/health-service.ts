@@ -9,6 +9,18 @@ export interface HealthStatus {
   };
 }
 
+export interface LivenessStatus {
+  status: "ok";
+  timestamp: string;
+}
+
+export async function getLivenessStatus(): Promise<LivenessStatus> {
+  return {
+    status: "ok",
+    timestamp: new Date().toISOString(),
+  };
+}
+
 export async function getHealthStatus(): Promise<HealthStatus> {
   let databaseStatus: "ok" | "error" = "ok";
 
@@ -19,11 +31,16 @@ export async function getHealthStatus(): Promise<HealthStatus> {
   }
 
   return {
-    status: databaseStatus === "ok" ? "ok" : "degraded",
+    status:
+      databaseStatus === "ok"
+        ? "ok"
+        : "degraded",
+
     timestamp: new Date().toISOString(),
+
     services: {
       api: "ok",
-      database: databaseStatus
-    }
+      database: databaseStatus,
+    },
   };
 }
