@@ -89,6 +89,21 @@ enum ResourceReservationStatus {
   RELEASED
 }
 
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
 model User {
   id               String     @id @default(uuid()) @db.Uuid
   username         String     @unique @db.VarChar(32)
@@ -104,12 +119,12 @@ model User {
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
-  sessions         Session[]
-  servers          Server[]                @relation("ServerOwner")
-  serverSubusers   ServerSubuser[]
-  auditLogs        AuditLog[]              @relation("AuditActor")
-  supportTickets   SupportTicket[]
-  ticketMessages   SupportTicketMessage[]  @relation("TicketMessageAuthor")
+  sessions       Session[]
+  servers        Server[]                @relation("ServerOwner")
+  serverSubusers ServerSubuser[]
+  auditLogs      AuditLog[]              @relation("AuditActor")
+  supportTickets SupportTicket[]
+  ticketMessages SupportTicketMessage[]  @relation("TicketMessageAuthor")
 
   @@index([role])
   @@index([status])
@@ -150,7 +165,7 @@ model Node {
   diskTotalBytes   BigInt?
   diskFreeBytes    BigInt?
 
-  // Administrator-approved resource limits.
+  // Resource capacities approved by the administrator.
   cpuAllocatable         Float?
   memoryAllocatableBytes BigInt?
   swapAllocatableBytes   BigInt?
@@ -224,6 +239,10 @@ model Server {
   cpuLimit         Float
   ioWeight         Int    @default(500)
 
+  databaseLimit   Int @default(0)
+  allocationLimit Int @default(1)
+  backupLimit     Int @default(0)
+
   environment   Json
   installedAt   DateTime?
   suspendedAt   DateTime?
@@ -232,15 +251,15 @@ model Server {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  owner              User                     @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  node               Node                     @relation(fields: [nodeId], references: [id], onDelete: Restrict)
-  egg                Egg                      @relation(fields: [eggId], references: [id], onDelete: Restrict)
-  allocations        Allocation[]
-  backups            Backup[]
-  schedules          Schedule[]
-  databases          ServerDatabase[]
-  subusers           ServerSubuser[]
-  jobs               NodeJob[]
+  owner               User                      @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  node                Node                      @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  egg                 Egg                       @relation(fields: [eggId], references: [id], onDelete: Restrict)
+  allocations         Allocation[]
+  backups             Backup[]
+  schedules           Schedule[]
+  databases           ServerDatabase[]
+  subusers            ServerSubuser[]
+  jobs                NodeJob[]
   resourceReservation NodeResourceReservation?
 
   @@index([ownerId])
@@ -276,7 +295,6 @@ model NodeJob {
   type           NodeJobType
   status         NodeJobStatus @default(QUEUED)
 
-  // Unique key prevents duplicate execution of the same requested operation.
   idempotencyKey String        @db.VarChar(128)
 
   payload        Json
@@ -296,8 +314,8 @@ model NodeJob {
   errorCode      String?
   errorMessage   String?       @db.Text
 
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   node   Node    @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   server Server? @relation(fields: [serverId], references: [id], onDelete: SetNull)
@@ -310,16 +328,16 @@ model NodeJob {
 }
 
 model NodeResourceReservation {
-  id        String                    @id @default(uuid()) @db.Uuid
-  nodeId    String                    @db.Uuid
-  serverId  String                    @unique @db.Uuid
+  id         String                    @id @default(uuid()) @db.Uuid
+  nodeId     String                    @db.Uuid
+  serverId   String                    @unique @db.Uuid
 
-  cpu       Float
+  cpu        Float
   memoryBytes BigInt
   swapBytes   BigInt
   diskBytes   BigInt
 
-  status    ResourceReservationStatus @default(ACTIVE)
+  status     ResourceReservationStatus @default(ACTIVE)
   releasedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -412,19 +430,20 @@ model ServerSubuser {
 }
 
 model SupportTicket {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
+  id        String                @id @default(uuid()) @db.Uuid
+  userId    String                @db.Uuid
   subject   String
-  status    String   @default("OPEN")
-  priority  String   @default("NORMAL")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status    SupportTicketStatus   @default(OPEN)
+  priority  SupportTicketPriority @default(NORMAL)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
 
   user     User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
   messages SupportTicketMessage[]
 
   @@index([userId])
-  @@index([status])
+  @@index([status, priority])
+  @@index([createdAt])
 }
 
 model SupportTicketMessage {
