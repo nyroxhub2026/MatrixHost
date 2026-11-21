@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { authenticate } from "../../middleware/authentication.js";
 import {
   loginSchema,
   registerSchema
@@ -9,7 +10,8 @@ import {
 } from "./auth.service.js";
 import {
   createSession,
-  refreshSession
+  refreshSession,
+  revokeSession
 } from "./session.service.js";
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
@@ -27,9 +29,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     const user = await registerUser(parsed.data);
 
-    return reply.status(201).send({
-      user
-    });
+    return reply.status(201).send({ user });
   });
 
   app.post("/auth/login", async (request, reply) => {
@@ -45,7 +45,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const result = await loginUser(parsed.data);
-
     const session = await createSession(
       result.user.id,
       result.user.role
@@ -78,4 +77,31 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.send(result);
   });
+
+  app.post(
+    "/auth/logout",
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const body = request.body as { sessionId?: unknown };
+
+      if (
+        typeof body?.sessionId !== "string" ||
+        body.sessionId.length > 128
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: "INVALID_SESSION_ID",
+            message: "A valid session ID is required."
+          }
+        });
+      }
+
+      await revokeSession(
+        body.sessionId,
+        request.authUser!.id
+      );
+
+      return reply.send({ success: true });
+    }
+  );
 }
