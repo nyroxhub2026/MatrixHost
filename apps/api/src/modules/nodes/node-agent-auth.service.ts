@@ -1,4 +1,3 @@
-
 import {
   createHash,
   timingSafeEqual,
@@ -18,73 +17,70 @@ function hashCredential(
 export async function authenticateNodeAgent(
   nodeId: string,
   credential: string
-) {
+): Promise<{ nodeId: string }> {
   if (
     typeof nodeId !== "string" ||
     typeof credential !== "string" ||
     credential.length < 32 ||
     credential.length > 256
   ) {
-    throw AppError.unauthorized(
-      "Invalid Agent credentials."
+    throw new AppError(
+      "Invalid Agent credentials.",
+      401,
+      "INVALID_AGENT_CREDENTIALS"
     );
   }
 
-  const node = await prisma.node.findUnique({
-    where: {
-      id: nodeId,
-    },
-    select: {
-      id: true,
-      status: true,
-    },
-  });
-
-  if (!node) {
-    throw AppError.unauthorized(
-      "Invalid Agent credentials."
-    );
-  }
-
-  const storedHash = await prisma.nodeAgentCredential.findUnique({
-    where: {
-      nodeId,
-    },
+  const stored = await prisma.nodeAgentCredential.findUnique({
+    where: { nodeId },
     select: {
       credentialHash: true,
       revokedAt: true,
     },
   });
 
-  if (
-    !storedHash ||
-    storedHash.revokedAt !== null
-  ) {
-    throw AppError.unauthorized(
-      "Invalid Agent credentials."
+  if (!stored || stored.revokedAt !== null) {
+    throw new AppError(
+      "Invalid Agent credentials.",
+      401,
+      "INVALID_AGENT_CREDENTIALS"
+    );
+  }
+
+  if (!/^[a-f0-9]{64}$/i.test(stored.credentialHash)) {
+    throw new AppError(
+      "Invalid Agent credentials.",
+      401,
+      "INVALID_AGENT_CREDENTIALS"
     );
   }
 
   const suppliedHash = hashCredential(credential);
-
   const expectedHash = Buffer.from(
-    storedHash.credentialHash,
+    stored.credentialHash,
     "hex"
   );
 
-  if (
-    expectedHash.length !== suppliedHash.length ||
-    !timingSafeEqual(
-      expectedHash,
-      suppliedHash
-    )
-  ) {
-    throw AppError.unauthorized(
-      "Invalid Agent credentials."
+  if (!timingSafeEqual(expectedHash, suppliedHash)) {
+    throw new AppError(
+      "Invalid Agent credentials.",
+      401,
+      "INVALID_AGENT_CREDENTIALS"
     );
   }
 
-  return {
-    nodeId: node.id,
-  };
+  const node = await prisma.node.findUnique({
+    where: { id: nodeId },
+    select: { id: true },
+  });
+
+  if (!node) {
+    throw new AppError(
+      "Node not found.",
+      401,
+      "INVALID_AGENT_CREDENTIALS"
+    );
+  }
+
+  return { nodeId: node.id };
 }
