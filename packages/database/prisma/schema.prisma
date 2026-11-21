@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -61,6 +60,35 @@ enum AuditSeverity {
   CRITICAL
 }
 
+enum NodeJobStatus {
+  QUEUED
+  DELIVERED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum NodeJobType {
+  CREATE_SERVER
+  START_SERVER
+  STOP_SERVER
+  RESTART_SERVER
+  KILL_SERVER
+  REINSTALL_SERVER
+  SUSPEND_SERVER
+  UNSUSPEND_SERVER
+  DELETE_SERVER
+  SYNC_SERVER
+  CREATE_BACKUP
+  RESTORE_BACKUP
+}
+
+enum ResourceReservationStatus {
+  ACTIVE
+  RELEASED
+}
+
 model User {
   id               String     @id @default(uuid()) @db.Uuid
   username         String     @unique @db.VarChar(32)
@@ -76,10 +104,12 @@ model User {
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
-  sessions       Session[]
-  servers        Server[]        @relation("ServerOwner")
-  auditLogs      AuditLog[]      @relation("AuditActor")
-  supportTickets SupportTicket[]
+  sessions         Session[]
+  servers          Server[]                @relation("ServerOwner")
+  serverSubusers   ServerSubuser[]
+  auditLogs        AuditLog[]              @relation("AuditActor")
+  supportTickets   SupportTicket[]
+  ticketMessages   SupportTicketMessage[]  @relation("TicketMessageAuthor")
 
   @@index([role])
   @@index([status])
@@ -115,12 +145,15 @@ model Node {
   cpuCores         Int?
   memoryTotalBytes BigInt?
   memoryFreeBytes  BigInt?
+  swapTotalBytes   BigInt?
+  swapFreeBytes    BigInt?
   diskTotalBytes   BigInt?
   diskFreeBytes    BigInt?
 
-  // Admin-approved resource limits
+  // Administrator-approved resource limits.
   cpuAllocatable         Float?
   memoryAllocatableBytes BigInt?
+  swapAllocatableBytes   BigInt?
   diskAllocatableBytes   BigInt?
 
   publicAddress String
@@ -139,8 +172,10 @@ model Node {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  servers      Server[]
-  allocations  Allocation[]
+  servers              Server[]
+  allocations          Allocation[]
+  jobs                 NodeJob[]
+  resourceReservations NodeResourceReservation[]
 
   @@index([status])
   @@index([lastHeartbeatAt])
@@ -178,9 +213,9 @@ model Server {
   nodeId      String       @db.Uuid
   eggId       String       @db.Uuid
 
-  status        ServerStatus @default(INSTALLING)
-  containerId   String?      @unique
-  dockerImage   String
+  status         ServerStatus @default(INSTALLING)
+  containerId    String?      @unique
+  dockerImage    String
   startupCommand String
 
   memoryLimitBytes BigInt
@@ -189,22 +224,24 @@ model Server {
   cpuLimit         Float
   ioWeight         Int    @default(500)
 
-  environment  Json
-  installedAt  DateTime?
-  suspendedAt  DateTime?
+  environment   Json
+  installedAt   DateTime?
+  suspendedAt   DateTime?
   lastStartedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  owner       User             @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  node        Node             @relation(fields: [nodeId], references: [id], onDelete: Restrict)
-  egg         Egg              @relation(fields: [eggId], references: [id], onDelete: Restrict)
-  allocations Allocation[]
-  backups     Backup[]
-  schedules   Schedule[]
-  databases   ServerDatabase[]
-  subusers    ServerSubuser[]
+  owner              User                     @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  node               Node                     @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  egg                Egg                      @relation(fields: [eggId], references: [id], onDelete: Restrict)
+  allocations        Allocation[]
+  backups            Backup[]
+  schedules          Schedule[]
+  databases          ServerDatabase[]
+  subusers           ServerSubuser[]
+  jobs               NodeJob[]
+  resourceReservation NodeResourceReservation?
 
   @@index([ownerId])
   @@index([nodeId])
@@ -229,6 +266,69 @@ model Allocation {
   @@unique([nodeId, ipAddress, port, protocol])
   @@index([serverId])
   @@index([nodeId])
+}
+
+model NodeJob {
+  id             String        @id @default(uuid()) @db.Uuid
+  nodeId         String        @db.Uuid
+  serverId       String?       @db.Uuid
+
+  type           NodeJobType
+  status         NodeJobStatus @default(QUEUED)
+
+  // Unique key prevents duplicate execution of the same requested operation.
+  idempotencyKey String        @db.VarChar(128)
+
+  payload        Json
+  result         Json?
+
+  attempts       Int           @default(0)
+  maxAttempts    Int           @default(5)
+
+  availableAt    DateTime      @default(now())
+  deliveredAt    DateTime?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  lockedBy       String?
+  leaseExpiresAt DateTime?
+
+  errorCode      String?
+  errorMessage   String?       @db.Text
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  node   Node    @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  server Server? @relation(fields: [serverId], references: [id], onDelete: SetNull)
+
+  @@unique([nodeId, idempotencyKey])
+  @@index([nodeId, status, availableAt])
+  @@index([status, leaseExpiresAt])
+  @@index([serverId, createdAt])
+  @@index([createdAt])
+}
+
+model NodeResourceReservation {
+  id        String                    @id @default(uuid()) @db.Uuid
+  nodeId    String                    @db.Uuid
+  serverId  String                    @unique @db.Uuid
+
+  cpu       Float
+  memoryBytes BigInt
+  swapBytes   BigInt
+  diskBytes   BigInt
+
+  status    ResourceReservationStatus @default(ACTIVE)
+  releasedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([nodeId, status])
 }
 
 model Backup {
@@ -305,6 +405,7 @@ model ServerSubuser {
   createdAt   DateTime @default(now())
 
   server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([serverId, userId])
   @@index([userId])
@@ -319,10 +420,26 @@ model SupportTicket {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  messages SupportTicketMessage[]
 
   @@index([userId])
   @@index([status])
+}
+
+model SupportTicketMessage {
+  id         String   @id @default(uuid()) @db.Uuid
+  ticketId   String   @db.Uuid
+  authorId   String   @db.Uuid
+  message    String   @db.Text
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User          @relation("TicketMessageAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@index([authorId])
 }
 
 model AuditLog {
