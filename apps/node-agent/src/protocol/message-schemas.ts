@@ -41,7 +41,7 @@ export const jobMessageSchema = z
         ]),
         serverId: uuidSchema,
         payload: z.record(z.string(), z.unknown()),
-        attempt: z.number().int().positive(),
+        attempt: z.number().int().positive().max(100),
       })
       .strict(),
   })
@@ -65,8 +65,8 @@ export const jobResultMessageSchema = z
       .optional(),
     error: z
       .object({
-        code: z.string().min(1).max(64),
-        message: z.string().min(1).max(500),
+        code: z.string().min(1).max(100),
+        message: z.string().min(1).max(1000),
       })
       .strict()
       .optional(),
@@ -80,18 +80,39 @@ export const jobResultMessageSchema = z
     "A failed job result must include an error.",
   );
 
-export const agentWebSocketMessageSchema = z.discriminatedUnion(
-  "type",
-  [
+export const agentIncomingMessageSchema =
+  z.discriminatedUnion("type", [
+    connectedMessageSchema,
+    pingMessageSchema,
+    pongMessageSchema,
+    jobMessageSchema,
+  ]);
+
+export const agentOutgoingMessageSchema =
+  z.discriminatedUnion("type", [
+    pongMessageSchema,
+    jobAckMessageSchema,
+    jobResultMessageSchema,
+  ]);
+
+export const agentWebSocketMessageSchema =
+  z.discriminatedUnion("type", [
     connectedMessageSchema,
     pingMessageSchema,
     pongMessageSchema,
     jobMessageSchema,
     jobAckMessageSchema,
     jobResultMessageSchema,
-  ],
-);
+  ]);
 
 export type ValidatedAgentWebSocketMessage = z.infer<
   typeof agentWebSocketMessageSchema
+>;
+
+export type AgentIncomingMessage = z.infer<
+  typeof agentIncomingMessageSchema
+>;
+
+export type AgentOutgoingMessage = z.infer<
+  typeof agentOutgoingMessageSchema
 >;
