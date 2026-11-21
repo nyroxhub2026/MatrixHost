@@ -10,16 +10,18 @@ import {
   authRoutes,
   userRoutes,
   serverRoutes,
-} from "./modules";
+} from "./modules/index.js";
 
 import {
   requestContext,
   securityHeaders,
   errorHandler,
-} from "./middleware";
+} from "./middleware/index.js";
 
-import { appConfig } from "./config";
-import { authenticationPlugin } from "./middleware/authentication";
+import { appConfig } from "./config/index.js";
+import {
+  authenticate,
+} from "./middleware/authentication.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -56,7 +58,9 @@ export async function buildApp() {
 
   app.setErrorHandler(errorHandler);
 
-  await app.register(authenticationPlugin);
+  // Register authentication directly on the root instance.
+  app.decorateRequest("authUser", null);
+  app.decorate("authenticate", authenticate);
 
   await app.register(healthRoutes, {
     prefix: "/health",
@@ -91,7 +95,8 @@ async function start() {
     });
   } catch (error) {
     app.log.error(error);
-    process.exit(1);
+    await app.close();
+    process.exitCode = 1;
   }
 }
 
