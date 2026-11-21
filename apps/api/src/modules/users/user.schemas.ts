@@ -3,8 +3,8 @@ import { z } from "zod";
 const usernameSchema = z
   .string()
   .trim()
-  .min(3)
-  .max(32)
+  .min(3, "Username must contain at least 3 characters.")
+  .max(32, "Username cannot exceed 32 characters.")
   .regex(
     /^[a-zA-Z0-9_-]+$/,
     "Username may contain only letters, numbers, underscores and hyphens."
@@ -12,11 +12,20 @@ const usernameSchema = z
 
 const newPasswordSchema = z
   .string()
-  .min(12)
-  .max(128)
-  .regex(/[a-z]/, "Password must contain a lowercase letter.")
-  .regex(/[A-Z]/, "Password must contain an uppercase letter.")
-  .regex(/[0-9]/, "Password must contain a number.");
+  .min(12, "Password must contain at least 12 characters.")
+  .max(128, "Password cannot exceed 128 characters.")
+  .regex(
+    /[a-z]/,
+    "Password must contain a lowercase letter."
+  )
+  .regex(
+    /[A-Z]/,
+    "Password must contain an uppercase letter."
+  )
+  .regex(
+    /[0-9]/,
+    "Password must contain a number."
+  );
 
 export const updateProfileSchema = z
   .object({
@@ -35,9 +44,11 @@ export const changePasswordSchema = z
   })
   .strict()
   .refine(
-    (data) => data.currentPassword !== data.newPassword,
+    (data) =>
+      data.currentPassword !== data.newPassword,
     {
-      message: "New password must be different from current password.",
+      message:
+        "New password must be different from current password.",
       path: ["newPassword"],
     }
   );
