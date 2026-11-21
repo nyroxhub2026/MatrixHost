@@ -30,6 +30,19 @@ const nodeSelect = {
   updatedAt: true,
 } as const;
 
+function serializeNode<T extends Record<string, unknown>>(
+  node: T
+) {
+  return Object.fromEntries(
+    Object.entries(node).map(([key, value]) => [
+      key,
+      typeof value === "bigint"
+        ? value.toString()
+        : value,
+    ])
+  );
+}
+
 function isPrismaError(
   error: unknown,
   code: string
@@ -46,27 +59,27 @@ export async function createNode(
   input: CreateNodeInput
 ) {
   try {
-    return await prisma.node.create({
+    const node = await prisma.node.create({
       data: {
         name: input.name,
         fqdn: input.fqdn,
         scheme: input.scheme,
         port: input.port,
-
-        cpuAllocatable:
-          input.resources.cpuAllocatable,
-
-        memoryAllocatableBytes:
-          BigInt(input.resources.memoryAllocatableBytes),
-
-        swapAllocatableBytes:
-          BigInt(input.resources.swapAllocatableBytes),
-
-        diskAllocatableBytes:
-          BigInt(input.resources.diskAllocatableBytes),
+        cpuAllocatable: input.resources.cpuAllocatable,
+        memoryAllocatableBytes: BigInt(
+          input.resources.memoryAllocatableBytes
+        ),
+        swapAllocatableBytes: BigInt(
+          input.resources.swapAllocatableBytes
+        ),
+        diskAllocatableBytes: BigInt(
+          input.resources.diskAllocatableBytes
+        ),
       },
       select: nodeSelect,
     });
+
+    return serializeNode(node);
   } catch (error) {
     if (isPrismaError(error, "P2002")) {
       throw new AppError(
@@ -80,9 +93,7 @@ export async function createNode(
   }
 }
 
-export async function getNodeById(
-  nodeId: string
-) {
+export async function getNodeById(nodeId: string) {
   const node = await prisma.node.findUnique({
     where: { id: nodeId },
     select: nodeSelect,
@@ -92,16 +103,18 @@ export async function getNodeById(
     throw AppError.notFound("Node not found.");
   }
 
-  return node;
+  return serializeNode(node);
 }
 
 export async function listNodes() {
-  return prisma.node.findMany({
+  const nodes = await prisma.node.findMany({
     select: nodeSelect,
     orderBy: {
       createdAt: "desc",
     },
   });
+
+  return nodes.map(serializeNode);
 }
 
 export async function updateNode(
@@ -111,43 +124,41 @@ export async function updateNode(
   const resources = input.resources;
 
   try {
-    return await prisma.node.update({
+    const node = await prisma.node.update({
       where: { id: nodeId },
       data: {
         ...(input.name !== undefined
           ? { name: input.name }
           : {}),
-
         ...(input.fqdn !== undefined
           ? { fqdn: input.fqdn }
           : {}),
-
         ...(input.scheme !== undefined
           ? { scheme: input.scheme }
           : {}),
-
         ...(input.port !== undefined
           ? { port: input.port }
           : {}),
-
         ...(resources !== undefined
           ? {
               cpuAllocatable:
                 resources.cpuAllocatable,
-
-              memoryAllocatableBytes:
-                BigInt(resources.memoryAllocatableBytes),
-
-              swapAllocatableBytes:
-                BigInt(resources.swapAllocatableBytes),
-
-              diskAllocatableBytes:
-                BigInt(resources.diskAllocatableBytes),
+              memoryAllocatableBytes: BigInt(
+                resources.memoryAllocatableBytes
+              ),
+              swapAllocatableBytes: BigInt(
+                resources.swapAllocatableBytes
+              ),
+              diskAllocatableBytes: BigInt(
+                resources.diskAllocatableBytes
+              ),
             }
           : {}),
       },
       select: nodeSelect,
     });
+
+    return serializeNode(node);
   } catch (error) {
     if (isPrismaError(error, "P2025")) {
       throw AppError.notFound("Node not found.");
