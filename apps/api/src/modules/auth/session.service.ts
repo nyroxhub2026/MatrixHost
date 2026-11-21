@@ -26,7 +26,7 @@ export async function createSession(
     data: {
       id: randomUUID(),
       userId,
-      tokenHash: hashToken(refreshToken),
+      refreshHash: hashToken(refreshToken),
       expiresAt
     }
   });
@@ -39,11 +39,9 @@ export async function createSession(
 }
 
 export async function refreshSession(refreshToken: string) {
-  const tokenHash = hashToken(refreshToken);
-
   const session = await prisma.session.findFirst({
     where: {
-      tokenHash,
+      refreshHash: hashToken(refreshToken),
       expiresAt: { gt: new Date() }
     },
     include: {
@@ -51,7 +49,7 @@ export async function refreshSession(refreshToken: string) {
     }
   });
 
-  if (!session || !session.user) {
+  if (!session) {
     throw new AppError(
       "Invalid or expired session.",
       401,
@@ -64,7 +62,7 @@ export async function refreshSession(refreshToken: string) {
   await prisma.session.update({
     where: { id: session.id },
     data: {
-      tokenHash: hashToken(newRefreshToken),
+      refreshHash: hashToken(newRefreshToken),
       expiresAt: new Date(
         Date.now() + SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000
       )
