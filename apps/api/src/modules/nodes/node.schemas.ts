@@ -3,17 +3,17 @@ import { z } from "zod";
 const nodeNameSchema = z
   .string()
   .trim()
-  .min(3, "Node name must contain at least 3 characters.")
-  .max(64, "Node name cannot exceed 64 characters.");
+  .min(3)
+  .max(64);
 
-const hostnameSchema = z
+const addressSchema = z
   .string()
   .trim()
   .min(1)
   .max(253)
   .regex(
-    /^[a-zA-Z0-9.-]+$/,
-    "Invalid hostname."
+    /^[a-zA-Z0-9.:[\]-]+$/,
+    "Invalid network address."
   );
 
 const portSchema = z
@@ -46,9 +46,10 @@ const resourceCapacitySchema = z
 export const createNodeSchema = z
   .object({
     name: nodeNameSchema,
-    fqdn: hostnameSchema,
-    scheme: z.enum(["http", "https"]).default("https"),
-    port: portSchema.default(8443),
+    publicAddress: addressSchema,
+    listenAddress: addressSchema.default("0.0.0.0"),
+    listenPort: portSchema.default(8080),
+    tlsEnabled: z.boolean().default(true),
     resources: resourceCapacitySchema,
   })
   .strict();
@@ -56,9 +57,10 @@ export const createNodeSchema = z
 export const updateNodeSchema = z
   .object({
     name: nodeNameSchema.optional(),
-    fqdn: hostnameSchema.optional(),
-    scheme: z.enum(["http", "https"]).optional(),
-    port: portSchema.optional(),
+    publicAddress: addressSchema.optional(),
+    listenAddress: addressSchema.optional(),
+    listenPort: portSchema.optional(),
+    tlsEnabled: z.boolean().optional(),
     resources: resourceCapacitySchema.optional(),
   })
   .strict()
