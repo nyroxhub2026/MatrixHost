@@ -31,10 +31,11 @@ export async function createSession(
   role: string
 ) {
   const refreshToken = createRefreshToken();
+  const sessionId = randomUUID();
 
   const session = await prisma.session.create({
     data: {
-      id: randomUUID(),
+      id: sessionId,
       userId,
       refreshHash: hashToken(refreshToken),
       expiresAt: getExpirationDate(),
@@ -44,7 +45,11 @@ export async function createSession(
   return {
     sessionId: session.id,
     refreshToken,
-    accessToken: createAccessToken(userId, role),
+    accessToken: createAccessToken(
+      userId,
+      role,
+      session.id
+    ),
   };
 }
 
@@ -129,7 +134,8 @@ export async function refreshSession(
     sessionId: session.id,
     accessToken: createAccessToken(
       session.user.id,
-      session.user.role
+      session.user.role,
+      session.id
     ),
     refreshToken: newRefreshToken,
   };
