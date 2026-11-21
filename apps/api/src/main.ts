@@ -1,98 +1,100 @@
-import "dotenv/config";
-
 import Fastify from "fastify";
-import { loadAppConfig } from "./config/index.js";
+import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
+import websocket from "@fastify/websocket";
+
 import {
-  registerCors,
-  registerErrorHandler,
-  registerRateLimit,
-  registerRequestContext,
-  registerSecurityHeaders
-} from "./middleware/index.js";
-import {
-  authRoutes,
   healthRoutes,
   systemRoutes,
-  userRoutes
-} from "./modules/index.js";
+  authRoutes,
+  userRoutes,
+  serverRoutes,
+} from "./modules";
 
-async function bootstrap(): Promise<void> {
-  const config = loadAppConfig();
+import {
+  requestContext,
+  securityHeaders,
+  errorHandler,
+} from "./middleware";
 
+import { appConfig } from "./config";
+import { authenticationPlugin } from "./middleware/authentication";
+
+export async function buildApp() {
   const app = Fastify({
     logger: {
-      level: config.LOG_LEVEL,
+      level: appConfig.logLevel,
       redact: [
         "req.headers.authorization",
         "req.headers.cookie",
         "req.body.password",
-        "req.body.currentPassword",
-        "req.body.newPassword",
         "req.body.refreshToken",
-        "req.body.token"
-      ]
+      ],
     },
     trustProxy: false,
-    requestIdHeader: false
+    bodyLimit: 1024 * 1024,
+    requestIdHeader: "x-request-id",
   });
 
-  registerErrorHandler(app);
+  await app.register(helmet);
 
-  await registerRequestContext(app);
-  await registerSecurityHeaders(app);
-  await registerRateLimit(app);
-  await registerCors(app, config);
-
-  await app.register(
-    async (api) => {
-      await api.register(healthRoutes);
-      await api.register(systemRoutes);
-      await api.register(authRoutes);
-      await api.register(userRoutes);
-    },
-    { prefix: "/api/v1" }
-  );
-
-  app.setNotFoundHandler((_request, reply) => {
-    return reply.status(404).send({
-      error: {
-        code: "ROUTE_NOT_FOUND",
-        message: "The requested API endpoint was not found."
-      }
-    });
+  await app.register(cors, {
+    origin: appConfig.panelUrl,
+    credentials: true,
   });
 
-  app.addHook("onClose", async () => {
-    const { prisma } = await import("@matrixhost/database");
-    await prisma.$disconnect();
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: "1 minute",
   });
 
-  await app.listen({
-    host: config.API_HOST,
-    port: config.API_PORT
+  await app.register(websocket);
+
+  app.addHook("onRequest", requestContext);
+  app.addHook("onRequest", securityHeaders);
+
+  app.setErrorHandler(errorHandler);
+
+  await app.register(authenticationPlugin);
+
+  await app.register(healthRoutes, {
+    prefix: "/health",
   });
 
-  app.log.info(
-    `MatrixHost API listening on ${config.API_HOST}:${config.API_PORT}`
-  );
+  await app.register(systemRoutes, {
+    prefix: "/system",
+  });
 
-  const shutdown = async (signal: string): Promise<void> => {
-    app.log.info(`Received ${signal}. Shutting down API...`);
+  await app.register(authRoutes, {
+    prefix: "/auth",
+  });
 
-    try {
-      await app.close();
-      process.exit(0);
-    } catch (error) {
-      app.log.error({ error }, "API shutdown failed");
-      process.exit(1);
-    }
-  };
+  await app.register(userRoutes, {
+    prefix: "/users",
+  });
 
-  process.once("SIGINT", () => void shutdown("SIGINT"));
-  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+  await app.register(serverRoutes, {
+    prefix: "/servers",
+  });
+
+  return app;
 }
 
-bootstrap().catch((error: unknown) => {
-  console.error("Failed to start MatrixHost API:", error);
-  process.exitCode = 1;
-});
+async function start() {
+  const app = await buildApp();
+
+  try {
+    await app.listen({
+      host: appConfig.host,
+      port: appConfig.port,
+    });
+  } catch (error) {
+    app.log.error(error);
+    process.exit(1);
+  }
+}
+
+if (process.env.NODE_ENV !== "test") {
+  void start();
+}
