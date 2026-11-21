@@ -1,7 +1,4 @@
 import Fastify from "fastify";
-import cors from "@fastify/cors";
-import helmet from "@fastify/helmet";
-import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 
 import {
@@ -13,15 +10,15 @@ import {
 } from "./modules/index.js";
 
 import {
-  requestContext,
-  securityHeaders,
-  errorHandler,
+  registerRequestContext,
+  registerSecurityHeaders,
+  registerRateLimit,
+  registerCors,
+  registerErrorHandler,
+  authenticate,
 } from "./middleware/index.js";
 
 import { appConfig } from "./config/index.js";
-import {
-  authenticate,
-} from "./middleware/authentication.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -34,34 +31,29 @@ export async function buildApp() {
         "req.body.refreshToken",
       ],
     },
+
     trustProxy: false,
     bodyLimit: 1024 * 1024,
     requestIdHeader: "x-request-id",
   });
 
-  await app.register(helmet);
+  // Security and HTTP configuration.
+  await registerSecurityHeaders(app);
+  await registerCors(app, appConfig);
+  await registerRateLimit(app);
 
-  await app.register(cors, {
-    origin: appConfig.PANEL_URL,
-    credentials: true,
-  });
-
-  await app.register(rateLimit, {
-    max: 100,
-    timeWindow: "1 minute",
-  });
-
+  // WebSocket support.
   await app.register(websocket);
 
-  app.addHook("onRequest", requestContext);
-  app.addHook("onRequest", securityHeaders);
+  // Request context and error handling.
+  await registerRequestContext(app);
+  registerErrorHandler(app);
 
-  app.setErrorHandler(errorHandler);
-
-  // Register authentication directly on the root instance.
+  // Authentication.
   app.decorateRequest("authUser", null);
   app.decorate("authenticate", authenticate);
 
+  // API routes.
   await app.register(healthRoutes, {
     prefix: "/health",
   });
@@ -85,7 +77,7 @@ export async function buildApp() {
   return app;
 }
 
-async function start() {
+async function start(): Promise<void> {
   const app = await buildApp();
 
   try {
@@ -93,6 +85,10 @@ async function start() {
       host: appConfig.API_HOST,
       port: appConfig.API_PORT,
     });
+
+    app.log.info(
+      `MatrixHost API listening on ${appConfig.API_HOST}:${appConfig.API_PORT}`
+    );
   } catch (error) {
     app.log.error(error);
     await app.close();
