@@ -7,8 +7,8 @@ import {
 } from "./protocol/index.js";
 
 import type {
-  AgentWebSocketMessage,
-} from "./protocol/index.js";
+  AgentIncomingMessage,
+} from "./protocol/message-schemas.js";
 
 import {
   JobManager,
@@ -18,20 +18,19 @@ import {
 
 async function main(): Promise<void> {
   const config = loadAgentConfig();
+
   const httpClient = new AgentHttpClient(config);
 
   const jobManager = new JobManager();
+
   registerJobHandlers(jobManager);
 
   let stopped = false;
-
   let heartbeatTimer:
     | ReturnType<typeof setTimeout>
     | undefined;
 
   let activeHeartbeat: Promise<void> | undefined;
-
-  let jobBridge: JobWebSocketBridge | undefined;
 
   const webSocketClient = new AgentWebSocketClient(
     config,
@@ -55,41 +54,36 @@ async function main(): Promise<void> {
         );
       },
 
-      onMessage: async (
-        message: AgentWebSocketMessage,
-      ) => {
+      onMessage: async (message) => {
         await handleWebSocketMessage(message);
       },
     },
   );
 
-  jobBridge = new JobWebSocketBridge(
+  const jobBridge = new JobWebSocketBridge(
     jobManager,
     webSocketClient,
   );
 
   async function handleWebSocketMessage(
-    message: AgentWebSocketMessage,
+    message: AgentIncomingMessage,
   ): Promise<void> {
     switch (message.type) {
       case "connected": {
-        if (message.nodeId !== config.NODE_ID) {
+        if (
+          message.nodeId !== config.NODE_ID ||
+          message.protocolVersion !== 1
+        ) {
           throw new Error(
-            "WebSocket connected message has an unexpected node ID.",
-          );
-        }
-
-        if (message.protocolVersion !== 1) {
-          throw new Error(
-            "Unsupported WebSocket protocol version.",
+            "API WebSocket identity or protocol mismatch.",
           );
         }
 
         console.info(
-          "[MatrixHost Agent] API handshake completed.",
+          "[MatrixHost Agent] Authenticated with MatrixHost API.",
         );
 
-        break;
+        return;
       }
 
       case "ping": {
@@ -98,58 +92,31 @@ async function main(): Promise<void> {
           timestamp: message.timestamp,
         });
 
-        break;
+        return;
       }
 
       case "pong": {
         console.debug(
-          "[MatrixHost Agent] Received WebSocket pong.",
+          "[MatrixHost Agent] Pong received.",
         );
 
-        break;
+        return;
       }
 
       case "job": {
         console.info(
-          "[MatrixHost Agent] Received job.",
-          {
-            jobId: message.job.id,
-            jobType: message.job.type,
-          },
+          "[MatrixHost Agent] Job received:",
+          message.job.id,
+          message.job.type,
         );
 
-        await jobBridge?.handleMessage(message);
+        await jobBridge.handleMessage(message);
 
-        break;
-      }
-
-      case "job_ack": {
-        console.info(
-          "[MatrixHost Agent] Job acknowledgement received.",
-          {
-            jobId: message.jobId,
-            accepted: message.accepted,
-          },
-        );
-
-        break;
-      }
-
-      case "job_result": {
-        console.info(
-          "[MatrixHost Agent] Job result received.",
-          {
-            jobId: message.jobId,
-            success: message.success,
-          },
-        );
-
-        break;
+        return;
       }
 
       default: {
         const exhaustiveCheck: never = message;
-
         throw new Error(
           `Unsupported message: ${String(exhaustiveCheck)}`,
         );
@@ -158,33 +125,17 @@ async function main(): Promise<void> {
   }
 
   async function sendHeartbeat(): Promise<void> {
-    if (stopped || activeHeartbeat) {
+    if (stopped) {
       return;
     }
 
-    activeHeartbeat = (async () => {
-      try {
-        const hardware =
-          await collectHardwareSnapshot();
+    const hardware = await collectHardwareSnapshot();
 
-        await httpClient.sendHeartbeat(hardware);
+    await httpClient.sendHeartbeat(hardware);
 
-        console.info(
-          "[MatrixHost Agent] Heartbeat sent successfully.",
-        );
-      } catch (error) {
-        console.error(
-          "[MatrixHost Agent] Heartbeat failed:",
-          error instanceof Error
-            ? error.message
-            : "Unknown error.",
-        );
-      } finally {
-        activeHeartbeat = undefined;
-      }
-    })();
-
-    await activeHeartbeat;
+    console.info(
+      "[MatrixHost Agent] Heartbeat sent.",
+    );
   }
 
   function scheduleHeartbeat(): void {
@@ -193,9 +144,19 @@ async function main(): Promise<void> {
     }
 
     heartbeatTimer = setTimeout(() => {
-      void sendHeartbeat().finally(
-        scheduleHeartbeat,
-      );
+      activeHeartbeat = sendHeartbeat()
+        .catch((error) => {
+          console.error(
+            "[MatrixHost Agent] Heartbeat failed:",
+            error instanceof Error
+              ? error.message
+              : "Unknown error.",
+          );
+        })
+        .finally(() => {
+          activeHeartbeat = undefined;
+          scheduleHeartbeat();
+        });
     }, config.HEARTBEAT_INTERVAL_MS);
   }
 
@@ -209,7 +170,7 @@ async function main(): Promise<void> {
     stopped = true;
 
     console.info(
-      `[MatrixHost Agent] Received ${signal}. Shutting down...`,
+      `[MatrixHost Agent] Shutting down (${signal}).`,
     );
 
     if (heartbeatTimer) {
@@ -244,9 +205,8 @@ async function main(): Promise<void> {
       error,
     );
 
-    void shutdown("UNCAUGHT_EXCEPTION").finally(
-      () => process.exit(1),
-    );
+    process.exitCode = 1;
+    void shutdown("uncaughtException");
   });
 
   process.on("unhandledRejection", (reason) => {
@@ -255,26 +215,28 @@ async function main(): Promise<void> {
       reason,
     );
 
-    void shutdown("UNHANDLED_REJECTION").finally(
-      () => process.exit(1),
-    );
+    process.exitCode = 1;
+    void shutdown("unhandledRejection");
   });
-
-  console.info("[MatrixHost Agent] Starting...");
-
-  console.info(
-    `[MatrixHost Agent] Node ID: ${config.NODE_ID}`,
-  );
-
-  console.info(
-    `[MatrixHost Agent] Version: ${config.AGENT_VERSION}`,
-  );
 
   webSocketClient.start();
 
-  await sendHeartbeat();
+  try {
+    await sendHeartbeat();
+  } catch (error) {
+    console.error(
+      "[MatrixHost Agent] Initial heartbeat failed:",
+      error instanceof Error
+        ? error.message
+        : "Unknown error.",
+    );
+  }
 
   scheduleHeartbeat();
+
+  console.info(
+    "[MatrixHost Agent] Started.",
+  );
 }
 
 void main().catch((error) => {
@@ -283,5 +245,5 @@ void main().catch((error) => {
     error,
   );
 
-  process.exit(1);
+  process.exitCode = 1;
 });
