@@ -1,0 +1,339 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  SUPPORT
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+  BANNED
+}
+
+enum ServerStatus {
+  INSTALLING
+  STARTING
+  RUNNING
+  STOPPING
+  OFFLINE
+  RESTARTING
+  SUSPENDED
+  RESTORING
+  ERROR
+}
+
+enum NodeStatus {
+  ONLINE
+  OFFLINE
+  CONNECTING
+  MAINTENANCE
+  ERROR
+}
+
+enum AllocationProtocol {
+  TCP
+  UDP
+}
+
+enum BackupStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  RESTORING
+}
+
+enum AuditSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model User {
+  id                String     @id @default(uuid()) @db.Uuid
+  username          String     @unique @db.VarChar(32)
+  email             String     @unique @db.VarChar(254)
+  passwordHash      String
+  role              UserRole   @default(CUSTOMER)
+  status            UserStatus @default(PENDING)
+  emailVerified     Boolean    @default(false)
+  twoFactorEnabled  Boolean    @default(false)
+  twoFactorSecret   String?
+  avatarUrl         String?
+  lastLoginAt       DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  sessions          Session[]
+  servers            Server[]   @relation("ServerOwner")
+  auditLogs          AuditLog[] @relation("AuditActor")
+  supportTickets     SupportTicket[]
+
+  @@index([role])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  refreshHash  String
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Node {
+  id                       String     @id @default(uuid()) @db.Uuid
+  name                     String     @unique
+  description              String?
+  location                 String?
+  status                   NodeStatus @default(OFFLINE)
+
+  hostname                 String?
+  operatingSystem          String?
+  architecture             String?
+  cpuModel                 String?
+  cpuCores                 Int?
+  memoryTotalBytes         BigInt?
+  memoryFreeBytes          BigInt?
+  diskTotalBytes           BigInt?
+  diskFreeBytes            BigInt?
+
+  publicAddress            String
+  listenAddress            String     @default("0.0.0.0")
+  listenPort               Int        @default(8080)
+  tlsEnabled               Boolean    @default(true)
+
+  memoryOverallocatePercent Int       @default(0)
+  diskOverallocatePercent   Int       @default(0)
+  cpuOverallocatePercent    Int       @default(0)
+
+  agentVersion             String?
+  dockerVersion            String?
+  lastHeartbeatAt          DateTime?
+
+  createdAt                DateTime   @default(now())
+  updatedAt                DateTime   @updatedAt
+
+  servers                  Server[]
+  allocations              Allocation[]
+
+  @@index([status])
+  @@index([lastHeartbeatAt])
+}
+
+model Egg {
+  id                String   @id @default(uuid()) @db.Uuid
+  name              String
+  description       String   @default("")
+  author            String   @default("")
+  category          String
+  dockerImages      Json
+  startupCommand    String
+  variables         Json
+  config            Json
+  features          Json
+  sourceFormat      String   @default("PTERODACTYL_EGG")
+  sourceVersion     String?
+  supported         Boolean  @default(false)
+  compatibilityNotes Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  servers           Server[]
+
+  @@index([category])
+  @@index([supported])
+}
+
+model Server {
+  id                String       @id @default(uuid()) @db.Uuid
+  name              String
+  description       String?
+  ownerId           String       @db.Uuid
+  nodeId            String       @db.Uuid
+  eggId             String       @db.Uuid
+
+  status            ServerStatus @default(INSTALLING)
+  containerId       String?      @unique
+  dockerImage       String
+  startupCommand    String
+
+  memoryLimitBytes  BigInt
+  swapLimitBytes    BigInt       @default(0)
+  diskLimitBytes    BigInt
+  cpuLimit          Float
+  ioWeight          Int          @default(500)
+
+  environment       Json
+  installedAt      DateTime?
+  suspendedAt      DateTime?
+  lastStartedAt    DateTime?
+
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  owner             User         @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  node              Node         @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  egg               Egg          @relation(fields: [eggId], references: [id], onDelete: Restrict)
+  allocations       Allocation[]
+  backups           Backup[]
+  schedules         Schedule[]
+  databases         ServerDatabase[]
+  subusers          ServerSubuser[]
+
+  @@index([ownerId])
+  @@index([nodeId])
+  @@index([eggId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Allocation {
+  id          String             @id @default(uuid()) @db.Uuid
+  nodeId      String             @db.Uuid
+  serverId    String?            @db.Uuid
+  ipAddress   String
+  port        Int
+  protocol    AllocationProtocol @default(TCP)
+  isPrimary   Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+
+  node        Node               @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  server      Server?            @relation(fields: [serverId], references: [id], onDelete: SetNull)
+
+  @@unique([nodeId, ipAddress, port, protocol])
+  @@index([serverId])
+  @@index([nodeId])
+}
+
+model Backup {
+  id            String       @id @default(uuid()) @db.Uuid
+  serverId      String       @db.Uuid
+  name          String
+  status        BackupStatus @default(PENDING)
+  storagePath   String?
+  checksum      String?
+  sizeBytes     BigInt?
+  isLocked      Boolean      @default(false)
+  completedAt   DateTime?
+  createdAt     DateTime     @default(now())
+
+  server        Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@index([status])
+}
+
+model Schedule {
+  id          String   @id @default(uuid()) @db.Uuid
+  serverId    String   @db.Uuid
+  name        String
+  cron        String
+  timezone    String   @default("UTC")
+  isEnabled   Boolean  @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  tasks       ScheduleTask[]
+
+  @@index([serverId])
+  @@index([isEnabled, nextRunAt])
+}
+
+model ScheduleTask {
+  id          String   @id @default(uuid()) @db.Uuid
+  scheduleId  String   @db.Uuid
+  action      String
+  payload     Json
+  sequence    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  schedule    Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId, sequence])
+}
+
+model ServerDatabase {
+  id          String   @id @default(uuid()) @db.Uuid
+  serverId    String   @db.Uuid
+  name        String
+  username    String
+  passwordEncrypted String
+  host        String
+  port        Int      @default(3306)
+  createdAt   DateTime @default(now())
+
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([host, name])
+  @@index([serverId])
+}
+
+model ServerSubuser {
+  id          String   @id @default(uuid()) @db.Uuid
+  serverId    String   @db.Uuid
+  userId      String   @db.Uuid
+  permissions Json
+  createdAt   DateTime @default(now())
+
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, userId])
+  @@index([userId])
+}
+
+model SupportTicket {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  subject     String
+  status      String   @default("OPEN")
+  priority    String   @default("NORMAL")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AuditLog {
+  id          String        @id @default(uuid()) @db.Uuid
+  actorId     String?       @db.Uuid
+  action      String
+  targetType  String
+  targetId    String?
+  severity    AuditSeverity @default(INFO)
+  ipAddress   String?
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+
+  actor       User?         @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([severity])
+  @@index([createdAt])
+}
