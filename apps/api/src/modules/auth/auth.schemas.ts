@@ -3,14 +3,19 @@ import { z } from "zod";
 const emailSchema = z
   .string()
   .trim()
+  .max(254, "Email address is too long.")
   .toLowerCase()
-  .pipe(z.email().max(254));
+  .pipe(
+    z.email({
+      message: "Please provide a valid email address.",
+    })
+  );
 
 const usernameSchema = z
   .string()
   .trim()
-  .min(3)
-  .max(32)
+  .min(3, "Username must contain at least 3 characters.")
+  .max(32, "Username cannot exceed 32 characters.")
   .regex(
     /^[a-zA-Z0-9_-]+$/,
     "Username may contain only letters, numbers, underscores and hyphens."
@@ -18,8 +23,8 @@ const usernameSchema = z
 
 const passwordSchema = z
   .string()
-  .min(12)
-  .max(128)
+  .min(12, "Password must contain at least 12 characters.")
+  .max(128, "Password cannot exceed 128 characters.")
   .regex(
     /[a-z]/,
     "Password must contain a lowercase letter."
@@ -44,7 +49,10 @@ export const registerSchema = z
 export const loginSchema = z
   .object({
     email: emailSchema,
-    password: z.string().min(1).max(128),
+    password: z
+      .string()
+      .min(1, "Password is required.")
+      .max(128, "Password is too long."),
   })
   .strict();
 
