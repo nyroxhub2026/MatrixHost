@@ -11,31 +11,34 @@ import {
   verifyPassword,
 } from "../auth/password.service.js";
 
-function isUniqueConstraintError(
-  error: unknown
+function isPrismaError(
+  error: unknown,
+  code: string
 ): boolean {
   return (
     typeof error === "object" &&
     error !== null &&
     "code" in error &&
-    error.code === "P2002"
+    error.code === code
   );
 }
+
+const publicUserSelect = {
+  id: true,
+  email: true,
+  username: true,
+  role: true,
+  status: true,
+  emailVerified: true,
+  createdAt: true,
+} as const;
 
 export async function getUserProfile(userId: string) {
   const user = await prisma.user.findUnique({
     where: {
       id: userId,
     },
-    select: {
-      id: true,
-      email: true,
-      username: true,
-      role: true,
-      status: true,
-      emailVerified: true,
-      createdAt: true,
-    },
+    select: publicUserSelect,
   });
 
   if (!user) {
@@ -59,18 +62,10 @@ export async function updateUserProfile(
           ? { username: input.username }
           : {}),
       },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        role: true,
-        status: true,
-        emailVerified: true,
-        createdAt: true,
-      },
+      select: publicUserSelect,
     });
   } catch (error) {
-    if (isUniqueConstraintError(error)) {
+    if (isPrismaError(error, "P2002")) {
       throw new AppError(
         "Username is already taken.",
         409,
@@ -78,12 +73,7 @@ export async function updateUserProfile(
       );
     }
 
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "P2025"
-    ) {
+    if (isPrismaError(error, "P2025")) {
       throw AppError.notFound("User not found.");
     }
 
@@ -126,21 +116,29 @@ export async function changeUserPassword(
     input.newPassword
   );
 
-  await prisma.$transaction([
-    prisma.user.update({
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.updateMany({
       where: {
         id: userId,
+        passwordHash: user.passwordHash,
       },
       data: {
         passwordHash,
       },
-    }),
-    prisma.session.deleteMany({
+    });
+
+    if (updated.count !== 1) {
+      throw AppError.conflict(
+        "Password was changed by another request. Please try again."
+      );
+    }
+
+    await tx.session.deleteMany({
       where: {
         userId,
       },
-    }),
-  ]);
+    });
+  });
 
   return {
     success: true,
