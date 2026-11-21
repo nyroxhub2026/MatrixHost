@@ -1,13 +1,21 @@
 import type { FastifyInstance } from "fastify";
-import {
-  createServerSchema,
-} from "./server.schemas";
+import { z } from "zod";
+
+import { AppError } from "@matrixhost/shared";
+
+import { createServerSchema } from "./server.schemas.js";
+
 import {
   createServer,
   getServerById,
   listServers,
-} from "./server.service";
-import { AppError } from "@matrixhost/shared";
+} from "./server.service.js";
+
+const serverParamsSchema = z
+  .object({
+    serverId: z.uuid(),
+  })
+  .strict();
 
 export async function serverRoutes(
   app: FastifyInstance
@@ -24,11 +32,13 @@ export async function serverRoutes(
         throw AppError.unauthorized();
       }
 
-      const parsed = createServerSchema.safeParse(request.body);
+      const parsed = createServerSchema.safeParse(
+        request.body
+      );
 
       if (!parsed.success) {
         throw AppError.badRequest(
-          "Invalid server creation data",
+          "Invalid server creation data.",
           parsed.error.flatten()
         );
       }
@@ -38,10 +48,12 @@ export async function serverRoutes(
         parsed.data
       );
 
-      return reply.code(201).send({
+      return reply.code(202).send({
         success: true,
-        message: "Server record created successfully",
-        data: server,
+        message: "Server creation job has been queued.",
+        data: {
+          server,
+        },
       });
     }
   );
@@ -62,7 +74,9 @@ export async function serverRoutes(
 
       return reply.send({
         success: true,
-        data: servers,
+        data: {
+          servers,
+        },
       });
     }
   );
@@ -79,20 +93,27 @@ export async function serverRoutes(
         throw AppError.unauthorized();
       }
 
-      const params = request.params as {
-        serverId: string;
-      };
+      const parsed = serverParamsSchema.safeParse(
+        request.params
+      );
 
-      const serverId = params.serverId;
+      if (!parsed.success) {
+        throw AppError.badRequest(
+          "Invalid server ID.",
+          parsed.error.flatten()
+        );
+      }
 
       const server = await getServerById(
         user.id,
-        serverId
+        parsed.data.serverId
       );
 
       return reply.send({
         success: true,
-        data: server,
+        data: {
+          server,
+        },
       });
     }
   );
