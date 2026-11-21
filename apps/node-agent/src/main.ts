@@ -2,127 +2,117 @@ import { loadAgentConfig } from "./config.js";
 import { collectHardwareSnapshot } from "./resources/hardware.js";
 import { AgentHttpClient } from "./protocol/http-client.js";
 
-const config = loadAgentConfig();
-const client = new AgentHttpClient(config);
+async function main(): Promise<void> {
+  const config = loadAgentConfig();
+  const client = new AgentHttpClient(config);
 
-let stopping = false;
-let heartbeatRunning = false;
-let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
+  let activeHeartbeat: Promise<void> | undefined;
 
-function log(
-  level: "INFO" | "WARN" | "ERROR",
-  message: string,
-): void {
-  console.log(
-    `[${new Date().toISOString()}] [${level}] ${message}`,
-  );
-}
+  async function sendHeartbeat(): Promise<void> {
+    if (stopped || activeHeartbeat) {
+      return;
+    }
 
-async function heartbeat(): Promise<void> {
-  if (stopping || heartbeatRunning) {
-    return;
+    activeHeartbeat = (async () => {
+      try {
+        const hardware = await collectHardwareSnapshot();
+
+        await client.sendHeartbeat(hardware);
+
+        console.info(
+          `[MatrixHost Agent] Heartbeat sent successfully. Node: ${config.NODE_ID}`,
+        );
+      } catch (error) {
+        console.error(
+          "[MatrixHost Agent] Heartbeat failed:",
+          error instanceof Error ? error.message : "Unknown error",
+        );
+      } finally {
+        activeHeartbeat = undefined;
+      }
+    })();
+
+    await activeHeartbeat;
   }
 
-  heartbeatRunning = true;
+  function scheduleHeartbeat(): void {
+    if (stopped) {
+      return;
+    }
 
-  try {
-    const hardware = await collectHardwareSnapshot();
+    heartbeatTimer = setTimeout(() => {
+      void sendHeartbeat().finally(scheduleHeartbeat);
+    }, config.HEARTBEAT_INTERVAL_MS);
+  }
 
-    await client.sendHeartbeat({
-      ...hardware,
-      agentVersion: config.AGENT_VERSION,
+  async function shutdown(signal: string): Promise<void> {
+    if (stopped) {
+      return;
+    }
+
+    stopped = true;
+
+    console.info(
+      `[MatrixHost Agent] Received ${signal}. Shutting down...`,
+    );
+
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
+      heartbeatTimer = undefined;
+    }
+
+    if (activeHeartbeat) {
+      await activeHeartbeat;
+    }
+
+    console.info("[MatrixHost Agent] Shutdown complete.");
+  }
+
+  process.once("SIGINT", () => {
+    void shutdown("SIGINT");
+  });
+
+  process.once("SIGTERM", () => {
+    void shutdown("SIGTERM");
+  });
+
+  process.on("uncaughtException", (error) => {
+    console.error(
+      "[MatrixHost Agent] Uncaught exception:",
+      error,
+    );
+
+    void shutdown("UNCAUGHT_EXCEPTION").finally(() => {
+      process.exit(1);
     });
+  });
 
-    log("INFO", "Heartbeat successfully delivered.");
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown heartbeat error.";
+  process.on("unhandledRejection", (reason) => {
+    console.error(
+      "[MatrixHost Agent] Unhandled rejection:",
+      reason,
+    );
 
-    log("ERROR", message);
-  } finally {
-    heartbeatRunning = false;
-  }
+    void shutdown("UNHANDLED_REJECTION").finally(() => {
+      process.exit(1);
+    });
+  });
+
+  console.info("[MatrixHost Agent] Starting...");
+  console.info(`[MatrixHost Agent] Node ID: ${config.NODE_ID}`);
+  console.info(`[MatrixHost Agent] Version: ${config.AGENT_VERSION}`);
+
+  await sendHeartbeat();
+  scheduleHeartbeat();
 }
 
-function scheduleHeartbeat(): void {
-  if (stopping) {
-    return;
-  }
+void main().catch((error) => {
+  console.error(
+    "[MatrixHost Agent] Fatal startup error:",
+    error,
+  );
 
-  timer = setTimeout(async () => {
-    await heartbeat();
-    scheduleHeartbeat();
-  }, config.HEARTBEAT_INTERVAL_MS);
-}
-
-async function shutdown(
-  signal: string,
-): Promise<void> {
-  if (stopping) {
-    return;
-  }
-
-  stopping = true;
-
-  if (timer) {
-    clearTimeout(timer);
-  }
-
-  log("INFO", `Received ${signal}. Stopping Node Agent.`);
-
-  // Wait for an active heartbeat to finish.
-  while (heartbeatRunning) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  log("INFO", "Node Agent stopped.");
-}
-
-async function start(): Promise<void> {
-  log("INFO", `Starting MatrixHost Node Agent ${config.AGENT_VERSION}`);
-  log("INFO", `Node ID: ${config.NODE_ID}`);
-
-  await heartbeat();
-
-  if (!stopping) {
-    scheduleHeartbeat();
-  }
-}
-
-process.once("SIGINT", () => {
-  void shutdown("SIGINT");
-});
-
-process.once("SIGTERM", () => {
-  void shutdown("SIGTERM");
-});
-
-process.once("uncaughtException", (error) => {
-  log("ERROR", `Uncaught exception: ${error.message}`);
-  process.exitCode = 1;
-  void shutdown("uncaughtException");
-});
-
-process.once("unhandledRejection", (reason) => {
-  const message =
-    reason instanceof Error
-      ? reason.message
-      : "Unknown rejection";
-
-  log("ERROR", `Unhandled rejection: ${message}`);
-  process.exitCode = 1;
-  void shutdown("unhandledRejection");
-});
-
-void start().catch((error: unknown) => {
-  const message =
-    error instanceof Error
-      ? error.message
-      : "Unknown startup error";
-
-  log("ERROR", `Agent startup failed: ${message}`);
-  process.exitCode = 1;
-  void shutdown("startup failure");
+  process.exit(1);
 });
