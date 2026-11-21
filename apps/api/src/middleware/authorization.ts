@@ -1,4 +1,5 @@
 import type { FastifyRequest } from "fastify";
+
 import { AppError } from "@matrixhost/shared";
 
 export type Permission =
@@ -14,7 +15,13 @@ export type Permission =
   | "billing.manage"
   | "support.manage";
 
-const rolePermissions: Record<string, Permission[]> = {
+type Role =
+  | "SUPER_ADMIN"
+  | "ADMIN"
+  | "SUPPORT"
+  | "CUSTOMER";
+
+const rolePermissions: Record<Role, readonly Permission[]> = {
   SUPER_ADMIN: [
     "users.read",
     "users.manage",
@@ -26,40 +33,53 @@ const rolePermissions: Record<string, Permission[]> = {
     "eggs.read",
     "eggs.manage",
     "billing.manage",
-    "support.manage"
+    "support.manage",
   ],
+
   ADMIN: [
     "users.read",
+    "users.manage",
     "servers.read",
     "servers.create",
     "servers.manage",
     "nodes.read",
+    "nodes.manage",
     "eggs.read",
-    "support.manage"
+    "eggs.manage",
+    "support.manage",
   ],
+
   SUPPORT: [
     "users.read",
     "servers.read",
-    "support.manage"
+    "support.manage",
   ],
+
   CUSTOMER: [
     "servers.read",
-    "servers.create"
-  ]
+    "servers.create",
+  ],
 };
 
-export function requirePermission(permission: Permission) {
-  return async (request: FastifyRequest): Promise<void> => {
+export function requirePermission(
+  permission: Permission
+) {
+  return async (
+    request: FastifyRequest
+  ): Promise<void> => {
     const user = request.authUser;
 
     if (!user) {
-      throw new AppError("Authentication required.", 401, "UNAUTHORIZED");
+      throw AppError.unauthorized();
     }
 
-    const permissions = rolePermissions[user.role] ?? [];
+    const role = user.role as Role;
 
-    if (!permissions.includes(permission)) {
-      throw new AppError("Permission denied.", 403, "FORBIDDEN");
+    if (
+      !Object.hasOwn(rolePermissions, role) ||
+      !rolePermissions[role].includes(permission)
+    ) {
+      throw AppError.forbidden("Permission denied.");
     }
   };
 }
