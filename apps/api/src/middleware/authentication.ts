@@ -4,14 +4,19 @@ import type {
   FastifyRequest,
 } from "fastify";
 
+import { prisma } from "@matrixhost/database";
 import { AppError } from "@matrixhost/shared";
-import { verifyAccessToken } from "../modules/auth/token.service.js";
+
+import {
+  verifyAccessToken,
+} from "../modules/auth/token.service.js";
 
 declare module "fastify" {
   interface FastifyRequest {
     authUser: {
       id: string;
       role: string;
+      sessionId: string;
     } | null;
   }
 
@@ -29,12 +34,11 @@ export async function authenticate(
 ): Promise<void> {
   const authorization = request.headers.authorization;
 
-  if (!authorization?.startsWith("Bearer ")) {
-    throw new AppError(
-      "Authentication required.",
-      401,
-      "UNAUTHORIZED"
-    );
+  if (
+    !authorization ||
+    !authorization.startsWith("Bearer ")
+  ) {
+    throw AppError.unauthorized();
   }
 
   const token = authorization.slice(7);
@@ -42,15 +46,48 @@ export async function authenticate(
 
   if (!payload) {
     throw new AppError(
-      "Invalid or expired token.",
+      "Invalid or expired access token.",
       401,
       "INVALID_TOKEN"
     );
   }
 
+  const session = await prisma.session.findFirst({
+    where: {
+      id: payload.sid,
+      userId: payload.sub,
+      expiresAt: {
+        gt: new Date(),
+      },
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          role: true,
+          status: true,
+          emailVerified: true,
+        },
+      },
+    },
+  });
+
+  if (
+    !session ||
+    session.user.status !== "ACTIVE" ||
+    !session.user.emailVerified
+  ) {
+    throw new AppError(
+      "Session is invalid, expired or revoked.",
+      401,
+      "INVALID_SESSION"
+    );
+  }
+
   request.authUser = {
-    id: payload.sub,
-    role: payload.role,
+    id: session.user.id,
+    role: session.user.role,
+    sessionId: session.id,
   };
 }
 
@@ -58,11 +95,7 @@ export async function authenticationPlugin(
   app: FastifyInstance
 ): Promise<void> {
   app.decorateRequest("authUser", null);
-
-  app.decorate(
-    "authenticate",
-    authenticate
-  );
+  app.decorate("authenticate", authenticate);
 }
 
 export async function requireRoles(
@@ -71,18 +104,10 @@ export async function requireRoles(
   allowedRoles: string[]
 ): Promise<void> {
   if (!request.authUser) {
-    throw new AppError(
-      "Authentication required.",
-      401,
-      "UNAUTHORIZED"
-    );
+    throw AppError.unauthorized();
   }
 
   if (!allowedRoles.includes(request.authUser.role)) {
-    throw new AppError(
-      "Permission denied.",
-      403,
-      "FORBIDDEN"
-    );
+    throw AppError.forbidden();
   }
 }
