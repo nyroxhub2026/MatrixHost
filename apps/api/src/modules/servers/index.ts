@@ -1,5 +1,12 @@
-export { healthRoutes } from "./health";
-export { systemRoutes } from "./system";
-export { authRoutes } from "./auth";
-export { userRoutes } from "./users";
-export { serverRoutes } from "./servers";
+export { serverRoutes } from "./server.routes";
+
+export {
+  createServer,
+  getServerById,
+  listServers,
+} from "./server.service";
+
+export {
+  createServerSchema,
+  updateServerSchema,
+} from "./server.schemas";
