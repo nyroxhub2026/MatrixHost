@@ -8,6 +8,7 @@ import {
   userRoutes,
   serverRoutes,
   nodeRoutes,
+  nodeAgentCredentialRoutes,
 } from "./modules/index.js";
 
 import {
@@ -30,6 +31,7 @@ export async function buildApp() {
         "req.headers.cookie",
         "req.body.password",
         "req.body.refreshToken",
+        "req.body.credential",
       ],
     },
 
@@ -54,28 +56,38 @@ export async function buildApp() {
   app.decorateRequest("authUser", null);
   app.decorate("authenticate", authenticate);
 
-  // API routes.
+  // Health endpoints.
   await app.register(healthRoutes, {
     prefix: "/health",
   });
 
+  // System information.
   await app.register(systemRoutes, {
     prefix: "/system",
   });
 
+  // Authentication endpoints.
   await app.register(authRoutes, {
     prefix: "/auth",
   });
 
+  // User endpoints.
   await app.register(userRoutes, {
     prefix: "/users",
   });
 
+  // Game server endpoints.
   await app.register(serverRoutes, {
     prefix: "/servers",
   });
 
+  // Node management endpoints.
   await app.register(nodeRoutes, {
+    prefix: "/nodes",
+  });
+
+  // Node Agent credential management.
+  await app.register(nodeAgentCredentialRoutes, {
     prefix: "/nodes",
   });
 
