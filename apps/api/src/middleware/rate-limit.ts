@@ -9,11 +9,18 @@ export async function registerRateLimit(
     max: 100,
     timeWindow: "1 minute",
     ban: 0,
+
+    keyGenerator: (request) => {
+      return request.ip;
+    },
+
     errorResponseBuilder: () => ({
+      success: false,
       error: {
         code: "RATE_LIMIT_EXCEEDED",
-        message: "Too many requests. Please try again later."
-      }
-    })
+        message:
+          "Too many requests. Please try again later.",
+      },
+    }),
   });
 }
