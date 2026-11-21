@@ -7,6 +7,7 @@ import {
   authRoutes,
   userRoutes,
   serverRoutes,
+  nodeRoutes,
 } from "./modules/index.js";
 
 import {
@@ -72,6 +73,10 @@ export async function buildApp() {
 
   await app.register(serverRoutes, {
     prefix: "/servers",
+  });
+
+  await app.register(nodeRoutes, {
+    prefix: "/nodes",
   });
 
   return app;
