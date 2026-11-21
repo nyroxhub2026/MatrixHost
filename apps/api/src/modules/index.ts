@@ -1,5 +1,5 @@
-export { healthRoutes } from "./health";
-export { systemRoutes } from "./system";
-export { authRoutes } from "./auth";
-export { userRoutes } from "./users";
-export { serverRoutes } from "./servers";
+export { healthRoutes } from "./health/index.js";
+export { systemRoutes } from "./system/index.js";
+export { authRoutes } from "./auth/index.js";
+export { userRoutes } from "./users/index.js";
+export { serverRoutes } from "./servers/index.js";
