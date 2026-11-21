@@ -15,13 +15,16 @@ export type Permission =
   | "billing.manage"
   | "support.manage";
 
-type Role =
+export type Role =
   | "SUPER_ADMIN"
   | "ADMIN"
   | "SUPPORT"
   | "CUSTOMER";
 
-const rolePermissions: Record<Role, readonly Permission[]> = {
+const rolePermissions: Record<
+  Role,
+  readonly Permission[]
+> = {
   SUPER_ADMIN: [
     "users.read",
     "users.manage",
@@ -61,6 +64,10 @@ const rolePermissions: Record<Role, readonly Permission[]> = {
   ],
 };
 
+function isRole(value: string): value is Role {
+  return Object.hasOwn(rolePermissions, value);
+}
+
 export function requirePermission(
   permission: Permission
 ) {
@@ -73,13 +80,18 @@ export function requirePermission(
       throw AppError.unauthorized();
     }
 
-    const role = user.role as Role;
+    if (!isRole(user.role)) {
+      throw AppError.forbidden(
+        "Invalid account role."
+      );
+    }
 
-    if (
-      !Object.hasOwn(rolePermissions, role) ||
-      !rolePermissions[role].includes(permission)
-    ) {
-      throw AppError.forbidden("Permission denied.");
+    const permissions = rolePermissions[user.role];
+
+    if (!permissions.includes(permission)) {
+      throw AppError.forbidden(
+        "Permission denied."
+      );
     }
   };
 }
