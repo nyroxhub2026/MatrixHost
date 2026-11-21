@@ -20,19 +20,27 @@ export class JobWebSocketBridge {
       return;
     }
 
-    const job = message.job;
+    const submission = this.manager.submit(message.job);
 
-    const accepted = this.socket.send({
+    const ackSent = this.socket.send({
       type: "job_ack",
-      jobId: job.id,
-      accepted: true,
+      jobId: submission.jobId,
+      accepted: submission.accepted,
     });
 
-    if (!accepted) {
+    if (!ackSent) {
+      if (submission.accepted) {
+        this.manager.cancel(submission.jobId);
+      }
+
       return;
     }
 
-    const result = await this.manager.execute(job);
+    if (!submission.accepted || !submission.result) {
+      return;
+    }
+
+    const result = await submission.result;
 
     this.socket.send({
       type: "job_result",
