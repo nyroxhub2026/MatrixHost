@@ -24,7 +24,7 @@ import { authenticationPlugin } from "./middleware/authentication";
 export async function buildApp() {
   const app = Fastify({
     logger: {
-      level: appConfig.logLevel,
+      level: appConfig.LOG_LEVEL,
       redact: [
         "req.headers.authorization",
         "req.headers.cookie",
@@ -40,7 +40,7 @@ export async function buildApp() {
   await app.register(helmet);
 
   await app.register(cors, {
-    origin: appConfig.panelUrl,
+    origin: appConfig.PANEL_URL,
     credentials: true,
   });
 
@@ -86,8 +86,8 @@ async function start() {
 
   try {
     await app.listen({
-      host: appConfig.host,
-      port: appConfig.port,
+      host: appConfig.API_HOST,
+      port: appConfig.API_PORT,
     });
   } catch (error) {
     app.log.error(error);
@@ -95,6 +95,6 @@ async function start() {
   }
 }
 
-if (process.env.NODE_ENV !== "test") {
+if (appConfig.NODE_ENV !== "test") {
   void start();
 }
