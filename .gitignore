@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+.turbo/
+coverage/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+playwright-report/
+test-results/
+
+# Temporary files
+tmp/
+temp/
+
+# Runtime data
+storage/
+*.pid
+*.seed
+
+# Certificates and private keys
+*.pem
+*.key
+*.crt
