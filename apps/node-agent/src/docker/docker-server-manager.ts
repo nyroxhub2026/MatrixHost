@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { DockerClient } from "./docker-client.js";
 import { DockerContainerDiscovery } from "./docker-container-discovery.js";
 import { DockerNetworkManager } from "./docker-network-manager.js";
@@ -21,30 +23,73 @@ export class DockerServerManager {
   }> {
     validateDockerCreateOptions(options);
 
+    const normalizedConfiguration = {
+      serverId: options.serverId,
+      image: options.image,
+      startupCommand: options.startupCommand,
+      environment: Object.fromEntries(
+        Object.entries(options.environment).sort(([a], [b]) =>
+          a.localeCompare(b),
+        ),
+      ),
+      limits: options.limits,
+      networkName: options.networkName,
+      ports: [...options.ports].sort((a, b) =>
+        `${a.hostIp}:${a.hostPort}/${a.protocol}`.localeCompare(
+          `${b.hostIp}:${b.hostPort}/${b.protocol}`,
+        ),
+      ),
+    };
+
+    const configHash = createHash("sha256")
+      .update(JSON.stringify(normalizedConfiguration))
+      .digest("hex");
+
     const existing = await this.discovery.findByServerId(
       options.serverId,
     );
 
     if (existing) {
-      throw new Error(
-        "A Docker container already exists for this server.",
+      const existingNetwork = await this.networks.find(
+        options.networkName,
       );
+
+      if (
+        existing.image !== options.image ||
+        existing.configHash !== configHash ||
+        !existingNetwork ||
+        existingNetwork.serverId !== options.serverId
+      ) {
+        throw new Error(
+          "An existing MatrixHost container does not match this server configuration.",
+        );
+      }
+
+      return {
+        serverId: options.serverId,
+        containerId: existing.id,
+        networkName: options.networkName,
+      };
     }
 
+    let networkCreated = false;
     const existingNetwork = await this.networks.find(
       options.networkName,
     );
 
     if (existingNetwork) {
-      throw new Error(
-        "A Docker network already exists for this server.",
+      if (existingNetwork.serverId !== options.serverId) {
+        throw new Error(
+          "Docker network ownership verification failed.",
+        );
+      }
+    } else {
+      await this.networks.create(
+        options.networkName,
+        options.serverId,
       );
+      networkCreated = true;
     }
-
-    await this.networks.create(
-      options.networkName,
-      options.serverId,
-    );
 
     try {
       const containerId = await this.docker.createContainer({
@@ -60,6 +105,7 @@ export class DockerServerManager {
         pidsLimit: options.limits.pidsLimit,
         networkName: options.networkName,
         ports: options.ports,
+        configHash,
       });
 
       return {
@@ -81,22 +127,35 @@ export class DockerServerManager {
       }
 
       if (discoveredContainer) {
+        if (
+          discoveredContainer.image === options.image &&
+          discoveredContainer.configHash === configHash
+        ) {
+          return {
+            serverId: options.serverId,
+            containerId: discoveredContainer.id,
+            networkName: options.networkName,
+          };
+        }
+
         throw new Error(
-          "The container exists but its creation response was invalid. The network was retained.",
+          "A container exists but does not match the requested configuration. The network was retained.",
           { cause: creationError },
         );
       }
 
-      try {
-        await this.networks.remove(
-          options.networkName,
-          options.serverId,
-        );
-      } catch {
-        throw new Error(
-          "Container creation failed and network cleanup also failed. Manual inspection is required.",
-          { cause: creationError },
-        );
+      if (networkCreated) {
+        try {
+          await this.networks.remove(
+            options.networkName,
+            options.serverId,
+          );
+        } catch {
+          throw new Error(
+            "Container creation failed and network cleanup also failed. Manual inspection is required.",
+            { cause: creationError },
+          );
+        }
       }
 
       throw creationError;
