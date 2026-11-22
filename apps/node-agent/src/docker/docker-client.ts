@@ -207,6 +207,7 @@ export class DockerClient {
 
   async createContainer(
     options: DockerContainerCreateOptions,
+    signal?: AbortSignal,
   ): Promise<string> {
     if (!SERVER_ID_PATTERN.test(options.serverId)) {
       throw new Error("Invalid server ID.");
@@ -396,7 +397,7 @@ export class DockerClient {
       options.startupCommand,
     );
 
-    const result = await this.run(args);
+    const result = await this.run(args, signal);
     const containerId = result.stdout.trim();
 
     if (!CONTAINER_ID_PATTERN.test(containerId)) {
