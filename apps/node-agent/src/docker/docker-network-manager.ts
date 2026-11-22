@@ -200,7 +200,7 @@ export class DockerNetworkManager {
       "network",
       "rm",
       networkName,
-    ]);
+    ], signal);
   }
 
   private validate(
