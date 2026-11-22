@@ -29,6 +29,10 @@ export type {
   DockerConfig,
 } from "./docker.config.js";
 
+export {
+  initializeDocker,
+} from "./initialize-docker.js";
+
 export type {
   DockerVolumeInfo,
 } from "./docker-volume-manager.js";
