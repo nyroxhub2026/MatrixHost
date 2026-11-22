@@ -58,6 +58,9 @@ jobs:
       - name: Typecheck Node Agent
         run: pnpm --filter @matrixhost/node-agent typecheck
 
+      - name: Build Node Agent
+        run: pnpm --filter @matrixhost/node-agent build
+
       - name: Run Node Agent tests
         run: pnpm --filter @matrixhost/node-agent test
 
