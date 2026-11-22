@@ -172,6 +172,10 @@ export class DockerServerManager {
   ): Promise<void> {
     const container = await this.requireContainer(serverId);
 
+    if (container.running) {
+      return;
+    }
+
     await this.docker.containerCommand(
       "start",
       container.id,
@@ -185,6 +189,10 @@ export class DockerServerManager {
     signal?: AbortSignal,
   ): Promise<void> {
     const container = await this.requireContainer(serverId);
+
+    if (!container.running) {
+      return;
+    }
 
     await this.docker.containerCommand(
       "stop",
@@ -213,6 +221,10 @@ export class DockerServerManager {
     signal?: AbortSignal,
   ): Promise<void> {
     const container = await this.requireContainer(serverId);
+
+    if (!container.running) {
+      return;
+    }
 
     await this.docker.containerCommand(
       "kill",
