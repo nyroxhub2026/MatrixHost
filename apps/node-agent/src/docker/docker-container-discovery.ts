@@ -1,16 +1,28 @@
 import { execFile } from "node:child_process";
+
 import { DockerClient } from "./docker-client.js";
-import type { DockerContainerSnapshot } from "./docker-client.js";
+
+import type {
+  DockerContainerSnapshot,
+} from "./docker-client.js";
 
 const SERVER_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const COMMAND_TIMEOUT_MS = 10_000;
+const CONTAINER_ID_PATTERN =
+  /^[a-f0-9]{12,64}$/i;
+
+export interface DockerDiscoveryOptions {
+  timeoutMs?: number;
+  maxBufferBytes?: number;
+  managedLabel?: string;
+}
 
 export class DockerContainerDiscovery {
   constructor(
     private readonly docker: DockerClient,
     private readonly binary = "docker",
+    private readonly options: DockerDiscoveryOptions = {},
   ) {}
 
   async findByServerId(
@@ -36,7 +48,10 @@ export class DockerContainerDiscovery {
       ids[0],
     );
 
-    if (!container || container.serverId !== serverId) {
+    if (
+      !container ||
+      container.serverId !== serverId
+    ) {
       throw new Error(
         "Docker container ownership verification failed.",
       );
@@ -48,6 +63,24 @@ export class DockerContainerDiscovery {
   private listContainerIds(
     serverId: string,
   ): Promise<string[]> {
+    const managedLabel =
+      this.options.managedLabel ??
+      "matrixhost.managed";
+
+    const timeoutMs =
+      this.options.timeoutMs ?? 10_000;
+
+    const maxBufferBytes =
+      this.options.maxBufferBytes ?? 1024 * 1024;
+
+    if (
+      !/^[a-zA-Z0-9_.-]{1,128}$/.test(managedLabel)
+    ) {
+      return Promise.reject(
+        new Error("Invalid Docker managed label."),
+      );
+    }
+
     return new Promise((resolve, reject) => {
       execFile(
         this.binary,
@@ -57,13 +90,13 @@ export class DockerContainerDiscovery {
           "--quiet",
           "--no-trunc",
           "--filter",
-          `label=matrixhost.managed=true`,
+          `label=${managedLabel}=true`,
           "--filter",
           `label=matrixhost.server-id=${serverId}`,
         ],
         {
-          timeout: COMMAND_TIMEOUT_MS,
-          maxBuffer: 1024 * 1024,
+          timeout: timeoutMs,
+          maxBuffer: maxBufferBytes,
           windowsHide: true,
           encoding: "utf8",
           shell: false,
@@ -77,6 +110,7 @@ export class DockerContainerDiscovery {
                 }`,
               ),
             );
+
             return;
           }
 
@@ -87,7 +121,7 @@ export class DockerContainerDiscovery {
 
           if (
             ids.some(
-              (id) => !/^[a-f0-9]{12,64}$/i.test(id),
+              (id) => !CONTAINER_ID_PATTERN.test(id),
             )
           ) {
             reject(
@@ -95,6 +129,7 @@ export class DockerContainerDiscovery {
                 "Docker returned an invalid container ID.",
               ),
             );
+
             return;
           }
 
