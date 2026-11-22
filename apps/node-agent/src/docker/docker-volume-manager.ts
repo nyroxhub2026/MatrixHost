@@ -1,8 +1,4 @@
-
 import { execFile } from "node:child_process";
-
-const COMMAND_TIMEOUT_MS = 30_000;
-const MAX_BUFFER_BYTES = 1024 * 1024;
 
 const SERVER_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -24,10 +20,43 @@ export interface DockerVolumeInfo {
   mountpoint: string;
 }
 
+export interface DockerVolumeManagerOptions {
+  timeoutMs?: number;
+  maxBufferBytes?: number;
+  managedLabel?: string;
+}
+
 export class DockerVolumeManager {
+  private readonly timeoutMs: number;
+  private readonly maxBufferBytes: number;
+  private readonly managedLabel: string;
+
   constructor(
     private readonly binary = "docker",
-  ) {}
+    options: DockerVolumeManagerOptions = {},
+  ) {
+    this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.maxBufferBytes =
+      options.maxBufferBytes ?? 1024 * 1024;
+    this.managedLabel =
+      options.managedLabel ?? "matrixhost.managed";
+
+    if (
+      !Number.isInteger(this.timeoutMs) ||
+      this.timeoutMs < 1000 ||
+      this.timeoutMs > 120_000 ||
+      !Number.isInteger(this.maxBufferBytes) ||
+      this.maxBufferBytes < 65_536 ||
+      this.maxBufferBytes > 16 * 1024 * 1024 ||
+      !/^[a-zA-Z0-9_.-]{1,128}$/.test(
+        this.managedLabel,
+      )
+    ) {
+      throw new Error(
+        "Invalid Docker volume manager configuration.",
+      );
+    }
+  }
 
   async create(
     volumeName: string,
@@ -51,7 +80,7 @@ export class DockerVolumeManager {
       "volume",
       "create",
       "--label",
-      "matrixhost.managed=true",
+      `${this.managedLabel}=true`,
       "--label",
       `matrixhost.server-id=${serverId}`,
       volumeName,
@@ -75,24 +104,34 @@ export class DockerVolumeManager {
       throw new Error("Invalid Docker volume name.");
     }
 
-    let output: string;
+    let result: {
+      stdout: string;
+      stderr: string;
+    };
 
     try {
-      const result = await this.run([
+      result = await this.run([
         "volume",
         "inspect",
         volumeName,
       ]);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /no such volume/i.test(error.message)
+      ) {
+        return null;
+      }
 
-      output = result.stdout;
-    } catch {
-      return null;
+      throw error;
     }
 
     let parsed: DockerVolumeInspect[];
 
     try {
-      parsed = JSON.parse(output) as DockerVolumeInspect[];
+      parsed = JSON.parse(
+        result.stdout,
+      ) as DockerVolumeInspect[];
     } catch {
       throw new Error(
         "Docker returned invalid volume data.",
@@ -122,7 +161,7 @@ export class DockerVolumeManager {
 
     const labelMap = labels as Record<string, unknown>;
 
-    const managed = labelMap["matrixhost.managed"];
+    const managed = labelMap[this.managedLabel];
     const serverId = labelMap["matrixhost.server-id"];
 
     if (
@@ -192,8 +231,8 @@ export class DockerVolumeManager {
         this.binary,
         args,
         {
-          timeout: COMMAND_TIMEOUT_MS,
-          maxBuffer: MAX_BUFFER_BYTES,
+          timeout: this.timeoutMs,
+          maxBuffer: this.maxBufferBytes,
           windowsHide: true,
           encoding: "utf8",
           shell: false,
@@ -207,6 +246,7 @@ export class DockerVolumeManager {
                 }`,
               ),
             );
+
             return;
           }
 
