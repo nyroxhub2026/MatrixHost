@@ -50,22 +50,22 @@ function createHandler(
         }
 
         case "START_SERVER": {
-          await runtime.servers.start(serverId);
+          await runtime.servers.start(serverId, signal);
           break;
         }
 
         case "STOP_SERVER": {
-          await runtime.servers.stop(serverId);
+          await runtime.servers.stop(serverId, signal);
           break;
         }
 
         case "RESTART_SERVER": {
-          await runtime.servers.restart(serverId);
+          await runtime.servers.restart(serverId, signal);
           break;
         }
 
         case "KILL_SERVER": {
-          await runtime.servers.kill(serverId);
+          await runtime.servers.kill(serverId, signal);
           break;
         }
 
