@@ -97,7 +97,7 @@ function validateVariableRules(
     const inValues = rule.match(/^in:(.+)$/);
 
     if (inValues) {
-      const allowed = inValues[1].split(",").map((item) => item.trim());
+      const allowed = inValues[1]!.split(",").map((item) => item.trim());
 
       if (!allowed.includes(value)) {
         return {
