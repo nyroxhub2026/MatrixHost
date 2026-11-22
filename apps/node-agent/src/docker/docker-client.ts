@@ -30,6 +30,7 @@ interface DockerInspectOutput {
     Running?: unknown;
     ExitCode?: unknown;
   };
+  Mounts?: unknown;
 }
 
 export type DockerContainerOperation =
@@ -157,6 +158,7 @@ export class DockerClient {
     const running = parsed.State?.Running;
     const exitCode = parsed.State?.ExitCode;
     const labels = parsed.Config?.Labels;
+    const mounts = parsed.Mounts;
 
     if (
       typeof id !== "string" ||
@@ -165,6 +167,7 @@ export class DockerClient {
       typeof image !== "string" ||
       typeof status !== "string" ||
       typeof running !== "boolean" ||
+      !Array.isArray(mounts) ||
       labels === null ||
       typeof labels !== "object" ||
       Array.isArray(labels)
@@ -172,6 +175,30 @@ export class DockerClient {
       throw new Error(
         "Docker returned incomplete container data.",
       );
+    }
+
+    const mountTargets: string[] = [];
+
+    for (const mount of mounts) {
+      if (
+        mount === null ||
+        typeof mount !== "object" ||
+        Array.isArray(mount)
+      ) {
+        throw new Error("Docker returned invalid mount data.");
+      }
+
+      const destination =
+        (mount as Record<string, unknown>).Destination;
+
+      if (
+        typeof destination !== "string" ||
+        !destination.startsWith("/")
+      ) {
+        throw new Error("Docker returned invalid mount destination.");
+      }
+
+      mountTargets.push(destination);
     }
 
     const labelMap = labels as Record<string, unknown>;
@@ -202,6 +229,7 @@ export class DockerClient {
         /^[a-f0-9]{64}$/i.test(configHash)
           ? configHash
           : null,
+      mountTargets,
     };
   }
 
@@ -444,13 +472,12 @@ export class DockerClient {
       remove: "rm",
     };
 
-    await this.run(
-      [
-        commands[operation],
-        containerId,
-      ],
-      signal,
-    );
+    const commandArgs =
+      operation === "remove"
+        ? ["rm", "--volumes", containerId]
+        : [commands[operation], containerId];
+
+    await this.run(commandArgs, signal);
   }
 
   private validateContainerId(
