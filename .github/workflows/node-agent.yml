@@ -52,6 +52,9 @@ jobs:
       - name: Build API workspace dependencies
         run: pnpm --filter @matrixhost/api... build
 
+      - name: Test Egg engine startup and variable resolution
+        run: pnpm --filter @matrixhost/egg-engine test
+
       - name: Typecheck Node Agent
         run: pnpm --filter @matrixhost/node-agent typecheck
 
