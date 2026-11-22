@@ -85,49 +85,66 @@ export class DockerServerManager {
     return this.discovery.findByServerId(serverId);
   }
 
-  async start(serverId: string): Promise<void> {
+  async start(
+    serverId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const container = await this.requireContainer(serverId);
 
     await this.docker.containerCommand(
       "start",
       container.id,
       serverId,
+      signal,
     );
   }
 
-  async stop(serverId: string): Promise<void> {
+  async stop(
+    serverId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const container = await this.requireContainer(serverId);
 
     await this.docker.containerCommand(
       "stop",
       container.id,
       serverId,
+      signal,
     );
   }
 
-  async restart(serverId: string): Promise<void> {
+  async restart(
+    serverId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const container = await this.requireContainer(serverId);
 
     await this.docker.containerCommand(
       "restart",
       container.id,
       serverId,
+      signal,
     );
   }
 
-  async kill(serverId: string): Promise<void> {
+  async kill(
+    serverId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const container = await this.requireContainer(serverId);
 
     await this.docker.containerCommand(
       "kill",
       container.id,
       serverId,
+      signal,
     );
   }
 
   private async requireContainer(serverId: string) {
     const container = await this.discovery.findByServerId(
       serverId,
+      signal,
     );
 
     if (
