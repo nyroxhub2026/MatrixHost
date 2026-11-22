@@ -4,7 +4,9 @@ export type AgentJobType =
   | "STOP_SERVER"
   | "RESTART_SERVER"
   | "KILL_SERVER"
-  | "DELETE_SERVER";
+  | "DELETE_SERVER"
+  | "CREATE_BACKUP"
+  | "RESTORE_BACKUP";
 
 export interface AgentJob {
   id: string;
@@ -33,8 +35,5 @@ export interface AgentJobExecutionResult {
 }
 
 export interface AgentJobHandler {
-  execute(
-    job: AgentJob,
-    signal: AbortSignal,
-  ): Promise<Record<string, unknown>>;
+  execute(job: AgentJob, signal: AbortSignal): Promise<Record<string, unknown>>;
 }
