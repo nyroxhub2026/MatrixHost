@@ -2,12 +2,19 @@ import { z } from "zod";
 
 const uuidSchema = z.uuid();
 
+const safeRecordSchema = z
+  .record(z.string().min(1).max(128), z.unknown())
+  .refine(
+    (record) => Object.keys(record).length <= 100,
+    "Too many object properties.",
+  );
+
 export const connectedMessageSchema = z
   .object({
     type: z.literal("connected"),
     nodeId: uuidSchema,
     serverTime: z.iso.datetime(),
-    protocolVersion: z.number().int().positive(),
+    protocolVersion: z.literal(1),
   })
   .strict();
 
@@ -40,7 +47,7 @@ export const jobMessageSchema = z
           "DELETE_SERVER",
         ]),
         serverId: uuidSchema,
-        payload: z.record(z.string(), z.unknown()),
+        payload: safeRecordSchema,
         attempt: z.number().int().positive().max(100),
       })
       .strict(),
@@ -60,9 +67,7 @@ export const jobResultMessageSchema = z
     type: z.literal("job_result"),
     jobId: uuidSchema,
     success: z.boolean(),
-    result: z
-      .record(z.string(), z.unknown())
-      .optional(),
+    result: safeRecordSchema.optional(),
     error: z
       .object({
         code: z.string().min(1).max(100),
@@ -78,6 +83,13 @@ export const jobResultMessageSchema = z
         ? message.error === undefined
         : message.error !== undefined,
     "A failed job result must include an error.",
+  )
+  .refine(
+    (message) =>
+      message.success
+        ? message.result !== undefined
+        : message.result === undefined,
+    "A successful job result must include a result and a failed result must not include one.",
   );
 
 export const agentIncomingMessageSchema =
