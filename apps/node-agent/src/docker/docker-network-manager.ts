@@ -52,6 +52,7 @@ export class DockerNetworkManager {
   async create(
     networkName: string,
     serverId: string,
+    signal?: AbortSignal,
   ): Promise<DockerNetworkInfo> {
     this.validate(networkName, serverId);
 
@@ -77,7 +78,7 @@ export class DockerNetworkManager {
       "--label",
       `matrixhost.server-id=${serverId}`,
       networkName,
-    ]);
+    ], signal);
 
     const created = await this.inspect(networkName);
 
@@ -216,6 +217,7 @@ export class DockerNetworkManager {
 
   private run(
     args: string[],
+    signal?: AbortSignal,
   ): Promise<{ stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
       execFile(
@@ -227,6 +229,7 @@ export class DockerNetworkManager {
           windowsHide: true,
           encoding: "utf8",
           shell: false,
+          ...(signal ? { signal } : {}),
         },
         (error, stdout, stderr) => {
           if (error) {
