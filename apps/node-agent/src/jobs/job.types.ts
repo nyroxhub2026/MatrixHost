@@ -14,19 +14,27 @@ export interface AgentJob {
   attempt: number;
 }
 
+export interface AgentJobError {
+  code: string;
+  message: string;
+}
+
 export interface AgentJobResult {
   jobId: string;
   success: boolean;
   result?: Record<string, unknown>;
-  error?: {
-    code: string;
-    message: string;
-  };
+  error?: AgentJobError;
+}
+
+export interface AgentJobExecutionResult {
+  serverId: string;
+  operation: AgentJobType;
+  completedAt: string;
 }
 
 export interface AgentJobHandler {
   execute(
     job: AgentJob,
-  signal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<Record<string, unknown>>;
 }
