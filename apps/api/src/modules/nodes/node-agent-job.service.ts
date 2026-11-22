@@ -85,6 +85,7 @@ async function buildJobPayload(
     type: SupportedJobType;
     serverId: string | null;
     nodeId: string;
+    payload: Prisma.JsonValue;
     server: {
       id: string;
       nodeId: string;
@@ -451,6 +452,7 @@ export async function claimNextNodeJob(
       type: job.type as SupportedJobType,
       serverId: job.serverId,
       nodeId: job.nodeId,
+      payload: job.payload,
       server: job.server,
     });
 
