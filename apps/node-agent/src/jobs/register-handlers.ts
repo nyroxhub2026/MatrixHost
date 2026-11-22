@@ -68,14 +68,8 @@ function createHandler(runtime: DockerRuntime, type: AgentJobType, defaultPidsLi
           const payload = createBackupJobPayloadSchema.parse(job.payload);
           const container = await runtime.servers.find(serverId);
           if (!container || !container.managed || container.serverId !== serverId) throw new Error("Owned server container was not found.");
-          const wasRunning = container.running;
-          if (!wasRunning) await runtime.servers.start(serverId, signal);
-          try {
-            const result = await runtime.backups.create(serverId, container.id, payload.backupId, payload.maxBytes, signal);
-            return { serverId, operation: type, backupId: payload.backupId, ...result, completedAt: new Date().toISOString() };
-          } finally {
-            if (!wasRunning) await runtime.servers.stop(serverId);
-          }
+          const result = await runtime.backups.create(serverId, container.id, payload.backupId, payload.maxBytes, signal);
+          return { serverId, operation: type, backupId: payload.backupId, ...result, completedAt: new Date().toISOString() };
         }
         case "RESTORE_BACKUP": {
           const payload = restoreBackupJobPayloadSchema.parse(job.payload);
