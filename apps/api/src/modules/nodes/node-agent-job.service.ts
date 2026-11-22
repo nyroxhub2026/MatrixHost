@@ -336,6 +336,11 @@ export async function claimNextNodeJob(
     include: {
       server: {
         include: {
+          egg: {
+            select: {
+              scripts: true,
+            },
+          },
           allocations: {
             where: {
               isPrimary: true,
