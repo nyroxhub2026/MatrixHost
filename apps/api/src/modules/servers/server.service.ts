@@ -230,6 +230,18 @@ export async function createServer(
         );
       }
 
+      if (egg.scripts?.privileged === true) {
+        throw AppError.forbidden(
+          "Privileged Egg installation scripts are not permitted."
+        );
+      }
+
+      if (egg.scripts?.install?.script?.trim()) {
+        throw AppError.conflict(
+          "This Egg requires an installer script. Isolated installer execution must be enabled before this Egg can be provisioned."
+        );
+      }
+
       const selectedNode = input.nodeId
         ? await tx.node.findUnique({
             where: { id: input.nodeId },
