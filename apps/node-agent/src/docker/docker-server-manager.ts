@@ -16,6 +16,7 @@ export class DockerServerManager {
 
   async create(
     options: DockerCreateOptions,
+    signal?: AbortSignal,
   ): Promise<{
     serverId: string;
     containerId: string;
@@ -87,6 +88,7 @@ export class DockerServerManager {
       await this.networks.create(
         options.networkName,
         options.serverId,
+        signal,
       );
       networkCreated = true;
     }
@@ -106,7 +108,7 @@ export class DockerServerManager {
         networkName: options.networkName,
         ports: options.ports,
         configHash,
-      });
+      }, signal);
 
       return {
         serverId: options.serverId,
