@@ -4,10 +4,9 @@ import type {
   DockerCommandResult,
 } from "./docker.types.js";
 
-const COMMAND_TIMEOUT_MS = 30_000;
-
-const CONTAINER_ID_PATTERN =
-  /^[a-f0-9]{12,64}$/i;
+import type {
+  DockerContainerOperation,
+} from "./docker-client.js";
 
 export class DockerContainerManager {
   constructor(
@@ -41,45 +40,18 @@ export class DockerContainerManager {
   async remove(
     containerId: string,
   ): Promise<DockerCommandResult> {
-    return this.execute("rm", containerId, ["--force"]);
+    return this.execute("remove", containerId);
   }
 
   private async execute(
-    operation: "start" | "stop" | "restart" | "kill" | "rm",
+    operation: DockerContainerOperation,
     containerId: string,
-    extraArgs: string[] = [],
   ): Promise<DockerCommandResult> {
-    if (!CONTAINER_ID_PATTERN.test(containerId)) {
-      return {
-        success: false,
-        message: "Invalid Docker container ID.",
-      };
-    }
-
     try {
-      const { execFile } = await import("node:child_process");
-
-      await new Promise<void>((resolve, reject) => {
-        execFile(
-          "docker",
-          [operation, ...extraArgs, containerId],
-          {
-            timeout: COMMAND_TIMEOUT_MS,
-            maxBuffer: 1024 * 1024,
-            windowsHide: true,
-            encoding: "utf8",
-            shell: false,
-          },
-          (error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-
-            resolve();
-          },
-        );
-      });
+      await this.docker.containerCommand(
+        operation,
+        containerId,
+      );
 
       return {
         success: true,
