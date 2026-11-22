@@ -16,8 +16,29 @@ import {
   registerJobHandlers,
 } from "./jobs/index.js";
 
+import {
+  initializeDocker,
+} from "./docker/index.js";
+
 async function main(): Promise<void> {
   const config = loadAgentConfig();
+
+  console.info(
+    "[MatrixHost Agent] Initializing Docker runtime...",
+  );
+
+  const docker = await initializeDocker();
+
+  if (docker.initialHealth.healthy) {
+    console.info(
+      "[MatrixHost Agent] Docker is available:",
+      docker.initialHealth.dockerVersion,
+    );
+  } else {
+    console.warn(
+      "[MatrixHost Agent] Docker is unavailable.",
+    );
+  }
 
   const httpClient = new AgentHttpClient(config);
 
@@ -26,6 +47,7 @@ async function main(): Promise<void> {
   registerJobHandlers(jobManager);
 
   let stopped = false;
+
   let heartbeatTimer:
     | ReturnType<typeof setTimeout>
     | undefined;
@@ -117,6 +139,7 @@ async function main(): Promise<void> {
 
       default: {
         const exhaustiveCheck: never = message;
+
         throw new Error(
           `Unsupported message: ${String(exhaustiveCheck)}`,
         );
@@ -186,6 +209,8 @@ async function main(): Promise<void> {
       await activeHeartbeat;
     }
 
+    await docker.runtime.shutdown();
+
     console.info(
       "[MatrixHost Agent] Shutdown complete.",
     );
@@ -206,6 +231,7 @@ async function main(): Promise<void> {
     );
 
     process.exitCode = 1;
+
     void shutdown("uncaughtException");
   });
 
@@ -216,6 +242,7 @@ async function main(): Promise<void> {
     );
 
     process.exitCode = 1;
+
     void shutdown("unhandledRejection");
   });
 
