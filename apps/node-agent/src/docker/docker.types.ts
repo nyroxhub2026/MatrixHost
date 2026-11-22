@@ -57,6 +57,7 @@ export interface DockerContainerSnapshot {
   exitCode: number | null;
   serverId: string | null;
   managed: boolean;
+  configHash: string | null;
 }
 
 export interface DockerCreateResult {
