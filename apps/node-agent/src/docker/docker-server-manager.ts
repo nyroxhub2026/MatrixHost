@@ -31,39 +31,61 @@ export class DockerServerManager {
       );
     }
 
+    const existingVolume = await this.volumes.find(
+      options.volumeName,
+    );
+
+    if (existingVolume) {
+      throw new Error(
+        "A Docker volume already exists with this name.",
+      );
+    }
+
     await this.volumes.create(
       options.volumeName,
       options.serverId,
     );
 
-    const containerId = await this.docker.createContainer({
-      serverId: options.serverId,
-      image: options.image,
-      name: `matrixhost-${options.serverId}`,
-      environment: options.environment,
-      memoryBytes: options.limits.memoryBytes,
-      memorySwapBytes: options.limits.memorySwapBytes,
-      cpuPercent: options.limits.cpuPercent,
-      pidsLimit: options.limits.pidsLimit,
-      volumeName: options.volumeName,
-    });
+    try {
+      const containerId = await this.docker.createContainer({
+        serverId: options.serverId,
+        image: options.image,
+        name: `matrixhost-${options.serverId}`,
+        environment: options.environment,
+        memoryBytes: options.limits.memoryBytes,
+        memorySwapBytes: options.limits.memorySwapBytes,
+        cpuPercent: options.limits.cpuPercent,
+        pidsLimit: options.limits.pidsLimit,
+        volumeName: options.volumeName,
+      });
 
-    return {
-      serverId: options.serverId,
-      containerId,
-      volumeName: options.volumeName,
-    };
+      return {
+        serverId: options.serverId,
+        containerId,
+        volumeName: options.volumeName,
+      };
+    } catch (creationError) {
+      try {
+        await this.volumes.remove(
+          options.volumeName,
+          options.serverId,
+        );
+      } catch {
+        throw new Error(
+          "Container creation failed and volume cleanup also failed. Manual inspection is required.",
+          { cause: creationError },
+        );
+      }
+
+      throw creationError;
+    }
   }
 
-  async find(
-    serverId: string,
-  ) {
+  async find(serverId: string) {
     return this.discovery.findByServerId(serverId);
   }
 
-  async start(
-    serverId: string,
-  ): Promise<void> {
+  async start(serverId: string): Promise<void> {
     const container = await this.requireContainer(serverId);
 
     await this.docker.containerCommand(
@@ -73,9 +95,7 @@ export class DockerServerManager {
     );
   }
 
-  async stop(
-    serverId: string,
-  ): Promise<void> {
+  async stop(serverId: string): Promise<void> {
     const container = await this.requireContainer(serverId);
 
     await this.docker.containerCommand(
@@ -85,9 +105,7 @@ export class DockerServerManager {
     );
   }
 
-  async restart(
-    serverId: string,
-  ): Promise<void> {
+  async restart(serverId: string): Promise<void> {
     const container = await this.requireContainer(serverId);
 
     await this.docker.containerCommand(
@@ -97,9 +115,7 @@ export class DockerServerManager {
     );
   }
 
-  async kill(
-    serverId: string,
-  ): Promise<void> {
+  async kill(serverId: string): Promise<void> {
     const container = await this.requireContainer(serverId);
 
     await this.docker.containerCommand(
@@ -114,9 +130,13 @@ export class DockerServerManager {
       serverId,
     );
 
-    if (!container) {
+    if (
+      !container ||
+      !container.managed ||
+      container.serverId !== serverId
+    ) {
       throw new Error(
-        "MatrixHost server container was not found.",
+        "MatrixHost server container was not found or ownership verification failed.",
       );
     }
 
