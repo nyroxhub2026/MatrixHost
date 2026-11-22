@@ -161,4 +161,43 @@ export function validateDockerCreateOptions(
   }
 
   validateDockerResourceLimits(options.limits);
+
+  if (options.installer) {
+    const installer = options.installer;
+
+    if (
+      typeof installer.image !== "string" ||
+      !IMAGE_PATTERN.test(installer.image) ||
+      typeof installer.script !== "string" ||
+      installer.script.trim().length === 0 ||
+      Buffer.byteLength(installer.script, "utf8") > 256 * 1024 ||
+      installer.script.includes("\\0") ||
+      (installer.entrypoint !== undefined &&
+        !/^(?:\\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(installer.entrypoint))
+    ) {
+      throw new Error("Invalid Egg installer configuration.");
+    }
+
+    const installerEnvironment = installer.environment;
+
+    if (
+      installerEnvironment === null ||
+      typeof installerEnvironment !== "object" ||
+      Array.isArray(installerEnvironment) ||
+      Object.keys(installerEnvironment).length > MAX_ENVIRONMENT_VARIABLES
+    ) {
+      throw new Error("Invalid Egg installer environment.");
+    }
+
+    for (const [key, value] of Object.entries(installerEnvironment)) {
+      if (
+        !/^[A-Z_][A-Z0-9_]*$/.test(key) ||
+        typeof value !== "string" ||
+        value.length > MAX_ENVIRONMENT_VALUE_LENGTH ||
+        value.includes("\\0")
+      ) {
+        throw new Error("Invalid Egg installer environment variable.");
+      }
+    }
+  }
 }
