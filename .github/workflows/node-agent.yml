@@ -1,0 +1,52 @@
+name: Node Agent CI
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "apps/node-agent/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/node-agent.yml"
+  pull_request:
+    paths:
+      - "apps/node-agent/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/node-agent.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  node-agent:
+    name: Node Agent typecheck and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.22.0 --activate
+
+      - name: Install Node Agent dependencies
+        run: pnpm install --no-frozen-lockfile --filter @matrixhost/node-agent
+
+      - name: Typecheck Node Agent
+        run: pnpm --filter @matrixhost/node-agent typecheck
+
+      - name: Run Node Agent tests
+        run: pnpm --filter @matrixhost/node-agent test
