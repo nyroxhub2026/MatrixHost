@@ -16,7 +16,7 @@ export class DockerRuntime {
     private readonly docker: DockerClient,
     networks: DockerNetworkManager,
     discovery: DockerContainerDiscovery,
-    installer: DockerInstallerRunner,
+    private readonly installer: DockerInstallerRunner,
   ) {
     this.servers = new DockerServerManager(
       docker,
@@ -26,7 +26,7 @@ export class DockerRuntime {
     );
   }
 
-  async status(): Promise<DockerRuntimeStatus> {
+  async cleanupOrphanedInstallers(): Promise<number> {\n    return this.installer.cleanupOrphanedInstallers();\n  }\n\n  async status(): Promise<DockerRuntimeStatus> {
     try {
       const version = await this.docker.version();
 
