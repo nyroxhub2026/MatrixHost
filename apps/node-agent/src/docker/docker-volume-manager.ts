@@ -67,13 +67,11 @@ export class DockerVolumeManager {
     const existing = await this.inspect(volumeName);
 
     if (existing) {
-      if (existing.serverId !== serverId) {
-        throw new Error(
-          "Docker volume ownership verification failed.",
-        );
-      }
-
-      return existing;
+      throw new Error(
+        existing.serverId === serverId
+          ? "Docker volume already exists for this server."
+          : "Docker volume ownership verification failed.",
+      );
     }
 
     await this.run([
@@ -88,13 +86,23 @@ export class DockerVolumeManager {
 
     const created = await this.inspect(volumeName);
 
-    if (!created || created.serverId !== serverId) {
+    if (
+      !created ||
+      created.serverId !== serverId ||
+      created.name !== volumeName
+    ) {
       throw new Error(
         "Docker volume creation could not be verified.",
       );
     }
 
     return created;
+  }
+
+  async find(
+    volumeName: string,
+  ): Promise<DockerVolumeInfo | null> {
+    return this.inspect(volumeName);
   }
 
   async inspect(
@@ -147,7 +155,7 @@ export class DockerVolumeManager {
     const labels = volume.Labels;
 
     if (
-      typeof volume.Name !== "string" ||
+      volume.Name !== volumeName ||
       typeof volume.Driver !== "string" ||
       typeof volume.Mountpoint !== "string" ||
       labels === null ||
