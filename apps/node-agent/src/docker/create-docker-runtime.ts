@@ -30,23 +30,22 @@ export function createDockerRuntime(
     config?.DOCKER_MANAGED_LABEL ??
     "matrixhost.managed";
 
-  const docker = new DockerClient(
+  const docker = new DockerClient(binary, {
+    timeoutMs,
+    maxBufferBytes,
+    managedLabel,
+  });
+
+  const volumes = new DockerVolumeManager(binary);
+
+  const discovery = new DockerContainerDiscovery(
+    docker,
     binary,
     {
       timeoutMs,
       maxBufferBytes,
       managedLabel,
     },
-  );
-
-  const volumes = new DockerVolumeManager(
-    binary,
-  );
-
-  const discovery = new DockerContainerDiscovery(
-    docker,
-    binary,
-    managedLabel,
   );
 
   return new DockerRuntime(
