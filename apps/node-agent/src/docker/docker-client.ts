@@ -321,6 +321,7 @@ export class DockerClient {
     operation: DockerContainerOperation,
     containerId: string,
     expectedServerId: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     this.validateContainerId(containerId);
 
@@ -351,10 +352,13 @@ export class DockerClient {
       remove: "rm",
     };
 
-    await this.run([
-      commands[operation],
-      containerId,
-    ]);
+    await this.run(
+      [
+        commands[operation],
+        containerId,
+      ],
+      signal,
+    );
   }
 
   private validateContainerId(
@@ -367,6 +371,7 @@ export class DockerClient {
 
   private run(
     args: string[],
+    signal?: AbortSignal,
   ): Promise<{
     stdout: string;
     stderr: string;
@@ -381,6 +386,7 @@ export class DockerClient {
           windowsHide: true,
           encoding: "utf8",
           shell: false,
+          ...(signal ? { signal } : {}),
         },
         (error, stdout, stderr) => {
           if (error) {
