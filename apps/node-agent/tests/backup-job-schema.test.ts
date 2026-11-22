@@ -20,6 +20,7 @@ test("rejects unsafe backup storage paths", () => {
     backupId,
     storagePath: "../outside.tar",
     checksum: "a".repeat(64),
+    maxBytes: 1024 * 1024,
   }).success, false);
 });
 
@@ -28,7 +29,7 @@ test("accepts restore jobs only with a checksum and bounded path", () => {
     id: jobId,
     type: "RESTORE_BACKUP",
     serverId,
-    payload: { backupId, storagePath: `${serverId}/${backupId}.tar`, checksum: "a".repeat(64) },
+    payload: { backupId, storagePath: `${serverId}/${backupId}.tar`, checksum: "a".repeat(64), maxBytes: 1024 * 1024 },
     attempt: 1,
   });
   assert.equal(result.success, true);
@@ -39,7 +40,7 @@ test("rejects restore jobs with invalid checksum", () => {
     id: jobId,
     type: "RESTORE_BACKUP",
     serverId,
-    payload: { backupId, storagePath: `${serverId}/${backupId}.tar`, checksum: "invalid" },
+    payload: { backupId, storagePath: `${serverId}/${backupId}.tar`, checksum: "invalid", maxBytes: 1024 * 1024 },
     attempt: 1,
   });
   assert.equal(result.success, false);
