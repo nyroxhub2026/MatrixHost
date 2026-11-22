@@ -161,6 +161,7 @@ export class DockerInstallerRunner {
         throw new Error("Docker returned an invalid installer container ID.");
       }
 
+      await this.assertNoExternalMounts(installerContainerId, signal);
       await this.run(["start", installerContainerId], signal);
       await this.run([
         "exec",
@@ -225,11 +226,41 @@ export class DockerInstallerRunner {
     } finally {
       if (installerContainerId) {
         try {
-          await this.run(["rm", "--force", installerContainerId]);
+          await this.run(["rm", "--force", "--volumes", installerContainerId]);
         } catch {
           // The installer container is disposable; retain the original error.
         }
       }
+    }
+  }
+
+  private async assertNoExternalMounts(
+    containerId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const result = await this.run([
+      "inspect",
+      "--format",
+      "{{json .Mounts}}",
+      containerId,
+    ], signal);
+
+    let mounts: unknown;
+
+    try {
+      mounts = JSON.parse(result.stdout);
+    } catch {
+      throw new Error("Docker returned invalid installer mount data.");
+    }
+
+    if (!Array.isArray(mounts)) {
+      throw new Error("Docker returned incomplete installer mount data.");
+    }
+
+    if (mounts.length > 0) {
+      throw new Error(
+        "Installer image declares external volumes; disk quota cannot be guaranteed for this image.",
+      );
     }
   }
 
