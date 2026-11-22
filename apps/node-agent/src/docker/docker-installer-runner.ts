@@ -120,6 +120,8 @@ export class DockerInstallerRunner {
     let installerContainerId: string | undefined;
 
     try {
+      await this.run(["pull", "--quiet", options.image], signal);
+
       const created = await this.run([
         "create",
         "--name",
