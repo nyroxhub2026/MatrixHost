@@ -78,7 +78,7 @@ export class DockerInstallerRunner {
     ]);
 
     const containerIds = listed.stdout
-      .split(/\\s+/)
+      .split(/\s+/)
       .map((value) => value.trim())
       .filter((value) => CONTAINER_ID_PATTERN.test(value));
 
