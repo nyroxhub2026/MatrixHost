@@ -9,7 +9,7 @@ The Node Agent is the trusted node-side worker for MatrixHost. It reports node h
 - HTTPS API endpoint in production.
 - A unique node UUID and a credential generated for that node by the MatrixHost API.
 - Docker storage driver support for per-container writable-layer quotas through `--storage-opt size=...`. Docker must reject creation if the backing filesystem cannot enforce the requested quota; the Agent does not silently fall back to unlimited storage.
-- A dedicated storage filesystem/path for the Docker data root is recommended.
+- A dedicated storage filesystem/path for the Docker data root is recommended. Set `AGENT_STORAGE_PATH` to the Docker data root (normally `/var/lib/docker`) so reported disk capacity describes the filesystem actually used by server containers.
 
 ## Agent environment
 
@@ -50,7 +50,7 @@ Only configure image prefixes controlled by administrators. An image matching an
 
 ## Storage and deletion behavior
 
-Server data currently lives in each container's quota-limited writable layer. The quota is enforced by Docker's storage driver; if Docker cannot apply the requested size, server creation fails rather than running without a disk limit.
+Server data currently lives in each container's quota-limited writable layer. The quota is enforced by Docker's storage driver; if Docker cannot apply the requested size, server creation fails rather than running without a disk limit. Images that declare Docker volumes are rejected because volume storage would bypass the writable-layer quota.
 
 Containers retain their writable layer across stop/start/restart. The Agent intentionally does **not** implement server deletion yet: safe deletion requires backup verification, retention policy checks, and a durable recovery path. Do not manually remove MatrixHost server containers if their data is needed.
 
