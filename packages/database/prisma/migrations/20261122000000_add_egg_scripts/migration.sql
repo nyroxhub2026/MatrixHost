@@ -1,0 +1,2 @@
+ALTER TABLE "Egg"
+ADD COLUMN "scripts" JSONB NOT NULL DEFAULT '{}'::jsonb;
