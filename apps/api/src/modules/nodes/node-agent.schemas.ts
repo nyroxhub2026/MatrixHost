@@ -21,6 +21,7 @@ const agentServerStatusSchema = z
 export const agentHeartbeatSchema = z
   .object({
     servers: z.array(agentServerStatusSchema).max(100).default([]),
+    serverInventoryComplete: z.boolean().default(false),
     agentVersion: z.string().trim().min(1).max(64),
     dockerVersion: z.string().trim().min(1).max(64),
 
