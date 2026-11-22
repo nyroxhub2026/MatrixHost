@@ -8,7 +8,7 @@ const RESOURCE_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 const IMAGE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/;
 const ENTRYPOINT_PATTERN = /^(?:\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/;
 const MAX_INSTALL_SCRIPT_BYTES = 256 * 1024;
-const MAX_INSTALL_OUTPUT_BYTES = 256 * 1024;
+const MAX_INSTALL_OUTPUT_BYTES = 1024 * 1024;
 
 export interface DockerInstallerLimits {
   memoryBytes: number;
