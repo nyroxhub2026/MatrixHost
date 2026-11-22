@@ -40,7 +40,10 @@ export async function updateNodeHeartbeat(
       agentVersion: input.agentVersion,
       dockerVersion: input.dockerVersion,
 
-      status: "ONLINE",
+      status:
+        input.dockerVersion === "unavailable"
+          ? "ERROR"
+          : "ONLINE",
       lastHeartbeatAt: new Date(),
     },
     select: {
