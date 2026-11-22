@@ -57,8 +57,37 @@ export class DockerContainerDiscovery {
     return container;
   }
 
+  async listManaged(): Promise<DockerContainerSnapshot[]> {
+    const ids = await this.listContainerIds();
+
+    if (ids.length > 500) {
+      throw new Error("Managed container inventory exceeds the heartbeat limit.");
+    }
+
+    const containers: DockerContainerSnapshot[] = [];
+
+    for (let index = 0; index < ids.length; index += 10) {
+      const batch = ids.slice(index, index + 10);
+      const snapshots = await Promise.all(
+        batch.map((id) => this.docker.inspectContainer(id)),
+      );
+
+      for (const snapshot of snapshots) {
+        if (
+          snapshot &&
+          snapshot.managed &&
+          snapshot.serverId
+        ) {
+          containers.push(snapshot);
+        }
+      }
+    }
+
+    return containers;
+  }
+
   private listContainerIds(
-    serverId: string,
+    serverId?: string,
   ): Promise<string[]> {
     const managedLabel =
       this.options.managedLabel ?? "matrixhost.managed";
@@ -93,8 +122,12 @@ export class DockerContainerDiscovery {
           "--no-trunc",
           "--filter",
           `label=${managedLabel}=true`,
-          "--filter",
-          `label=matrixhost.server-id=${serverId}`,
+          ...(serverId
+            ? [
+                "--filter",
+                `label=matrixhost.server-id=${serverId}`,
+              ]
+            : []),
         ],
         {
           timeout: timeoutMs,
