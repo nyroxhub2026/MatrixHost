@@ -171,7 +171,7 @@ export function validateDockerCreateOptions(
       typeof installer.script !== "string" ||
       installer.script.trim().length === 0 ||
       Buffer.byteLength(installer.script, "utf8") > 256 * 1024 ||
-      installer.script.includes("\\0") ||
+      installer.script.includes("\0") ||
       (installer.entrypoint !== undefined &&
         !/^(?:\\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(installer.entrypoint))
     ) {
@@ -194,7 +194,7 @@ export function validateDockerCreateOptions(
         !/^[A-Z_][A-Z0-9_]*$/.test(key) ||
         typeof value !== "string" ||
         value.length > MAX_ENVIRONMENT_VALUE_LENGTH ||
-        value.includes("\\0")
+        value.includes("\0")
       ) {
         throw new Error("Invalid Egg installer environment variable.");
       }
