@@ -173,7 +173,7 @@ export function validateDockerCreateOptions(
       Buffer.byteLength(installer.script, "utf8") > 256 * 1024 ||
       installer.script.includes("\0") ||
       (installer.entrypoint !== undefined &&
-        !/^(?:\\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(installer.entrypoint))
+        !/^(?:\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(installer.entrypoint))
     ) {
       throw new Error("Invalid Egg installer configuration.");
     }
