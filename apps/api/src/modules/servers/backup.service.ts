@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@matrixhost/database";
 import { AppError } from "@matrixhost/shared";
 
@@ -65,7 +66,7 @@ export async function createServerBackup(userId: string, serverId: string, name:
       },
     });
     return serializeBackup(backup);
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10000, timeout: 15000 });
 }
 
 export async function listServerBackups(userId: string, serverId: string) {
@@ -121,5 +122,5 @@ export async function restoreServerBackup(userId: string, serverId: string, back
       select: { id: true },
     });
     return { jobId: job.id, backupId: backup.id, status: "RESTORING" as const };
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10000, timeout: 15000 });
 }
