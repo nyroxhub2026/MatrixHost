@@ -68,3 +68,16 @@ pnpm --filter @matrixhost/node-agent build
 ```
 
 The Agent must be installed as a dedicated service on the node. Do not expose the Docker socket to the public network or to the Panel/API process. Access to the Docker daemon is highly privileged and should be granted only to the Agent service account.
+
+
+## Backup and restore
+
+The Agent supports `CREATE_BACKUP` and `RESTORE_BACKUP` jobs. Backup archives are streamed directly from the owned server container into the node-local directory configured by `DOCKER_BACKUP_DIRECTORY`; they are not staged in memory. The Agent writes a temporary file with restrictive permissions, calculates SHA-256 while streaming, and atomically renames the completed archive. Restore accepts only the exact `<server UUID>/<backup UUID>.tar` key and verifies the stored SHA-256 before passing the archive to the owned container's `tar` process.
+
+Configure:
+
+- `DOCKER_BACKUP_DIRECTORY` (default `/var/lib/matrixhost/backups`)
+- `DOCKER_BACKUP_TIMEOUT_MS` (default `3600000`)
+- `DOCKER_BACKUP_MAX_BYTES` (default 20 GiB)
+
+The directory must be writable only by the Node Agent service account and must have sufficient free disk space. Backups are node-local, unencrypted tar archives; they are not off-site or disaster-recovery copies. A backup job may temporarily start an offline container to run `tar`, then returns it to the offline state. A running game server is archived while running, so applications that require quiescing for consistent snapshots should be stopped before the backup is requested. Restore stops the server and leaves it offline. Test restore on a disposable server before relying on backups.
