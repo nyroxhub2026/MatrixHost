@@ -58,6 +58,7 @@ export class DockerServerManager {
       if (
         existing.image !== options.image ||
         existing.configHash !== configHash ||
+        existing.mountTargets.length > 0 ||
         !existingNetwork ||
         existingNetwork.serverId !== options.serverId
       ) {
@@ -110,6 +111,31 @@ export class DockerServerManager {
         configHash,
       }, signal);
 
+      const createdContainer =
+        await this.discovery.findByServerId(options.serverId);
+
+      if (
+        !createdContainer ||
+        createdContainer.id !== containerId ||
+        createdContainer.configHash !== configHash
+      ) {
+        throw new Error(
+          "Created container could not be verified.",
+        );
+      }
+
+      if (createdContainer.mountTargets.length > 0) {
+        await this.docker.containerCommand(
+          "remove",
+          createdContainer.id,
+          options.serverId,
+        );
+
+        throw new Error(
+          "The selected image declares external volumes. Disk quota cannot be guaranteed for this image.",
+        );
+      }
+
       return {
         serverId: options.serverId,
         containerId,
@@ -128,10 +154,27 @@ export class DockerServerManager {
         );
       }
 
+      if (discoveredContainer?.mountTargets.length) {
+        try {
+          await this.docker.containerCommand(
+            "remove",
+            discoveredContainer.id,
+            options.serverId,
+          );
+          discoveredContainer = null;
+        } catch {
+          throw new Error(
+            "An image-created volume was detected and its unstarted container could not be cleaned up.",
+            { cause: creationError },
+          );
+        }
+      }
+
       if (discoveredContainer) {
         if (
           discoveredContainer.image === options.image &&
-          discoveredContainer.configHash === configHash
+          discoveredContainer.configHash === configHash &&
+          discoveredContainer.mountTargets.length === 0
         ) {
           return {
             serverId: options.serverId,
