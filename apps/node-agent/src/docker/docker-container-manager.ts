@@ -15,42 +15,49 @@ export class DockerContainerManager {
 
   async start(
     containerId: string,
+    serverId: string,
   ): Promise<DockerCommandResult> {
-    return this.execute("start", containerId);
+    return this.execute("start", containerId, serverId);
   }
 
   async stop(
     containerId: string,
+    serverId: string,
   ): Promise<DockerCommandResult> {
-    return this.execute("stop", containerId);
+    return this.execute("stop", containerId, serverId);
   }
 
   async restart(
     containerId: string,
+    serverId: string,
   ): Promise<DockerCommandResult> {
-    return this.execute("restart", containerId);
+    return this.execute("restart", containerId, serverId);
   }
 
   async kill(
     containerId: string,
+    serverId: string,
   ): Promise<DockerCommandResult> {
-    return this.execute("kill", containerId);
+    return this.execute("kill", containerId, serverId);
   }
 
   async remove(
     containerId: string,
+    serverId: string,
   ): Promise<DockerCommandResult> {
-    return this.execute("remove", containerId);
+    return this.execute("remove", containerId, serverId);
   }
 
   private async execute(
     operation: DockerContainerOperation,
     containerId: string,
+    serverId: string,
   ): Promise<DockerCommandResult> {
     try {
       await this.docker.containerCommand(
         operation,
         containerId,
+        serverId,
       );
 
       return {
