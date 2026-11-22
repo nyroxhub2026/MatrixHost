@@ -60,7 +60,7 @@ export class DockerContainerDiscovery {
   async listManaged(): Promise<DockerContainerSnapshot[]> {
     const ids = await this.listContainerIds();
 
-    if (ids.length > 500) {
+    if (ids.length > 100) {
       throw new Error("Managed container inventory exceeds the heartbeat limit.");
     }
 
