@@ -6,6 +6,8 @@ on:
       - "**"
     paths:
       - "apps/node-agent/**"
+      - "apps/api/**"
+      - "packages/**"
       - "pnpm-workspace.yaml"
       - "package.json"
       - "tsconfig.base.json"
@@ -42,10 +44,19 @@ jobs:
           corepack prepare pnpm@10.22.0 --activate
 
       - name: Install Node Agent dependencies
-        run: pnpm install --no-frozen-lockfile --filter @matrixhost/node-agent
+        run: pnpm install --no-frozen-lockfile --filter @matrixhost/node-agent --filter @matrixhost/api...
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @matrixhost/database db:generate
+
+      - name: Build API workspace dependencies
+        run: pnpm --filter @matrixhost/api... build
 
       - name: Typecheck Node Agent
         run: pnpm --filter @matrixhost/node-agent typecheck
 
       - name: Run Node Agent tests
         run: pnpm --filter @matrixhost/node-agent test
+
+      - name: Typecheck API integration
+        run: pnpm --filter @matrixhost/api typecheck
