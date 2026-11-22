@@ -12,6 +12,8 @@ export { DockerContainerDiscovery } from "./docker-container-discovery.js";
 
 export { DockerVolumeManager } from "./docker-volume-manager.js";
 
+export { DockerServerManager } from "./docker-server-manager.js";
+
 export type {
   DockerVolumeInfo,
 } from "./docker-volume-manager.js";
