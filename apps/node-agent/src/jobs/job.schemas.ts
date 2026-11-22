@@ -45,7 +45,7 @@ export const createBackupJobPayloadSchema = z.object({
 
 export const restoreBackupJobPayloadSchema = z.object({
   backupId: z.uuid(),
-  storagePath: z.string().min(1).max(256),
+  storagePath: z.string().regex(/^[0-9a-f-]{36}\/[0-9a-f-]{36}\.tar$/i),
   checksum: z.string().regex(/^[a-f0-9]{64}$/i),
   maxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 }).strict();
