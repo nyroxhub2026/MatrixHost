@@ -1,3 +1,4 @@
+
 import {
   createDockerRuntime,
 } from "./create-docker-runtime.js";
@@ -14,7 +15,7 @@ export async function initializeDocker() {
   const config = loadDockerConfig();
 
   const runtime = createDockerRuntime({
-    dockerBinary: config.DOCKER_BINARY,
+    config,
   });
 
   const healthCheck = new DockerHealthCheck(runtime);
