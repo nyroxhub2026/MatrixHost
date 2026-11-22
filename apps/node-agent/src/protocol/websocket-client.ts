@@ -1,6 +1,6 @@
 import WebSocket, { type RawData } from "ws";
 
-import { loadAgentConfig } from "../config.js";
+import type { AgentConfig } from "../config.js";
 
 import {
   agentIncomingMessageSchema,
@@ -8,7 +8,7 @@ import {
   type AgentOutgoingMessage,
 } from "./message-schemas.js";
 
-type AgentConfig = ReturnType<typeof loadAgentConfig>;
+const MAX_QUEUED_MESSAGES = 100;
 
 export interface WebSocketClientOptions {
   onMessage: (
@@ -26,10 +26,11 @@ export class AgentWebSocketClient {
     | ReturnType<typeof setTimeout>
     | undefined;
 
-  private reconnectDelay = 1_000;
+  private reconnectDelay: number;
   private stopped = true;
   private connecting = false;
   private generation = 0;
+  private queuedMessages = 0;
   private messageQueue: Promise<void> = Promise.resolve();
 
   private readonly config: AgentConfig;
@@ -41,6 +42,7 @@ export class AgentWebSocketClient {
   ) {
     this.config = config;
     this.options = options;
+    this.reconnectDelay = config.RECONNECT_INTERVAL_MS;
   }
 
   start(): void {
@@ -103,7 +105,7 @@ export class AgentWebSocketClient {
         }
 
         this.connecting = false;
-        this.reconnectDelay = 1_000;
+        this.reconnectDelay = this.config.RECONNECT_INTERVAL_MS;
         this.options.onConnected?.();
       });
 
@@ -115,6 +117,16 @@ export class AgentWebSocketClient {
           return;
         }
 
+        if (this.queuedMessages >= MAX_QUEUED_MESSAGES) {
+          this.options.onError?.(
+            new Error("API message queue limit reached."),
+          );
+          socket.close(1013, "Agent message queue overloaded.");
+          return;
+        }
+
+        this.queuedMessages += 1;
+
         this.messageQueue = this.messageQueue
           .then(() => this.handleMessage(data, socket))
           .catch((error) => {
@@ -122,6 +134,12 @@ export class AgentWebSocketClient {
               error instanceof Error
                 ? error
                 : new Error("Message processing failed."),
+            );
+          })
+          .finally(() => {
+            this.queuedMessages = Math.max(
+              0,
+              this.queuedMessages - 1,
             );
           });
       });
