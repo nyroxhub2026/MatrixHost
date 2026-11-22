@@ -112,7 +112,7 @@ export class DockerServerManager {
         image: options.image,
         name: `matrixhost-${options.serverId}`,
         startupCommand: options.installer
-          ? `while [ ! -f /home/container/.matrixhost-install-complete ]; do sleep 1; done; ${options.startupCommand}`
+          ? `while [ ! -f /var/lib/matrixhost/install-complete ]; do sleep 1; done; ${options.startupCommand}`
           : options.startupCommand,
         environment: options.environment,
         memoryBytes: options.limits.memoryBytes,
