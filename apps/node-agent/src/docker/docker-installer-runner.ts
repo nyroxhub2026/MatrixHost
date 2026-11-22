@@ -343,6 +343,7 @@ export class DockerInstallerRunner {
         "tar",
         "-C",
         "/home/container",
+        "--no-same-owner",
         "-xf",
         "-",
       ],
