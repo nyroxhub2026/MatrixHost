@@ -20,7 +20,7 @@ const environmentSchema = z.object({
   API_URL: z.string().url().default("http://localhost:4000"),
 
   API_HOST: z.string().default("0.0.0.0"),
-  API_PORT: positiveIntegerFromEnv.default("4000"),
+  API_PORT: positiveIntegerFromEnv.default(4000),
 
   DATABASE_URL: z.string().min(1),
 
