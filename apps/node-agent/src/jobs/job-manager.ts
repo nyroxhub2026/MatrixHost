@@ -9,12 +9,14 @@ import type {
 
 const MAX_CONCURRENT_JOBS = 5;
 const MAX_COMPLETED_JOBS = 1000;
+const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 type JobStatus = "RUNNING" | "COMPLETED" | "FAILED";
 
 interface JobRecord {
   status: JobStatus;
   completedAt?: number;
+  result?: AgentJobResult;
 }
 
 export interface JobSubmission {
@@ -38,6 +40,11 @@ export class JobManager {
   private readonly activeJobs = new Map<
     string,
     AbortController
+  >();
+
+  private readonly runningPromises = new Map<
+    string,
+    Promise<AgentJobResult>
   >();
 
   private stopped = false;
@@ -80,13 +87,33 @@ export class JobManager {
 
     const job = parsed.data;
 
-    if (this.jobs.has(job.id)) {
-      const existing = this.jobs.get(job.id)!;
+    const existing = this.jobs.get(job.id);
+
+    if (existing) {
+      if (existing.status === "RUNNING") {
+        const existingPromise = this.runningPromises.get(job.id);
+
+        if (existingPromise) {
+          return {
+            accepted: true,
+            jobId: job.id,
+            result: existingPromise,
+          };
+        }
+      }
+
+      if (existing.result) {
+        return {
+          accepted: true,
+          jobId: job.id,
+          result: Promise.resolve(existing.result),
+        };
+      }
 
       return this.reject(
         job.id,
         "DUPLICATE_JOB",
-        `Job already exists with status ${existing.status}.`,
+        "Job was already processed.",
       );
     }
 
@@ -96,7 +123,7 @@ export class JobManager {
       return this.reject(
         job.id,
         "UNSUPPORTED_JOB",
-        `No handler is registered for ${job.type}.`,
+        "No handler is registered for this job type.",
       );
     }
 
@@ -110,7 +137,6 @@ export class JobManager {
 
     const controller = new AbortController();
 
-    // Reserve the job before acknowledging it.
     this.jobs.set(job.id, {
       status: "RUNNING",
     });
@@ -122,6 +148,8 @@ export class JobManager {
       handler,
       controller,
     );
+
+    this.runningPromises.set(job.id, result);
 
     return {
       accepted: true,
@@ -169,11 +197,31 @@ export class JobManager {
       controller.abort();
     }
 
-    await Promise.allSettled(
-      Array.from(this.activeJobs.keys()).map(
-        (jobId) => this.waitForJob(jobId),
-      ),
+    const running = Array.from(
+      this.runningPromises.values(),
     );
+
+    if (running.length === 0) {
+      return;
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      await Promise.race([
+        Promise.allSettled(running),
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(
+            resolve,
+            SHUTDOWN_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    }
   }
 
   private async runJob(
@@ -191,37 +239,43 @@ export class JobManager {
         throw new Error("Job was aborted.");
       }
 
-      this.jobs.set(job.id, {
-        status: "COMPLETED",
-        completedAt: Date.now(),
-      });
-
-      return {
+      const jobResult: AgentJobResult = {
         jobId: job.id,
         success: true,
         result,
       };
-    } catch (error) {
+
       this.jobs.set(job.id, {
-        status: "FAILED",
+        status: "COMPLETED",
         completedAt: Date.now(),
+        result: jobResult,
       });
 
-      return {
+      return jobResult;
+    } catch {
+      const jobResult: AgentJobResult = {
         jobId: job.id,
         success: false,
         error: {
           code: controller.signal.aborted
             ? "JOB_ABORTED"
             : "JOB_EXECUTION_FAILED",
-          message:
-            error instanceof Error
-              ? error.message.slice(0, 500)
-              : "Unknown job execution error.",
+          message: controller.signal.aborted
+            ? "Job execution was cancelled."
+            : "Job execution failed.",
         },
       };
+
+      this.jobs.set(job.id, {
+        status: "FAILED",
+        completedAt: Date.now(),
+        result: jobResult,
+      });
+
+      return jobResult;
     } finally {
       this.activeJobs.delete(job.id);
+      this.runningPromises.delete(job.id);
       this.cleanupCompletedJobs();
     }
   }
@@ -241,28 +295,27 @@ export class JobManager {
     };
   }
 
-  private async waitForJob(jobId: string): Promise<void> {
-    while (this.activeJobs.has(jobId)) {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 50);
-      });
-    }
-  }
-
   private cleanupCompletedJobs(): void {
     if (this.jobs.size <= MAX_COMPLETED_JOBS) {
       return;
     }
 
-    for (const [jobId, record] of this.jobs) {
-      if (record.status === "RUNNING") {
-        continue;
-      }
+    const completed = Array.from(this.jobs.entries())
+      .filter(([, record]) => record.status !== "RUNNING")
+      .sort(
+        (a, b) =>
+          (a[1].completedAt ?? 0) -
+          (b[1].completedAt ?? 0),
+      );
 
-      this.jobs.delete(jobId);
+    while (
+      this.jobs.size > MAX_COMPLETED_JOBS &&
+      completed.length > 0
+    ) {
+      const oldest = completed.shift();
 
-      if (this.jobs.size <= MAX_COMPLETED_JOBS) {
-        break;
+      if (oldest) {
+        this.jobs.delete(oldest[0]);
       }
     }
   }
