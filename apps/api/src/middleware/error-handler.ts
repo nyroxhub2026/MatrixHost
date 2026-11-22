@@ -22,10 +22,10 @@ export function registerErrorHandler(
     }
 
     if (error instanceof AppError) {
-      return reply.status(fastifyError.statusCode).send({
+      return reply.status(error.statusCode).send({
         success: false,
         error: {
-          code: fastifyError.code,
+          code: error.code,
           message: error.message,
           requestId: request.id,
         },
