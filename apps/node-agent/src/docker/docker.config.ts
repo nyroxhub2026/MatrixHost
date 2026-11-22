@@ -11,6 +11,10 @@ const dockerConfigSchema = z
       .string()
       .min(1)
       .max(255)
+      .regex(
+        /^[a-zA-Z0-9_./-]+$/,
+        "Invalid Docker binary path.",
+      )
       .default("docker"),
 
     DOCKER_COMMAND_TIMEOUT_MS: z.coerce
