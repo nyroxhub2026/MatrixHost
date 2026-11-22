@@ -28,7 +28,7 @@ test("rejects mismatched backup identifiers and paths before Docker execution", 
   try {
     const manager = new DockerBackupManager("docker", { directory });
     await assert.rejects(
-      manager.restore(serverId, containerId, backupId, `${serverId}/other.tar`, "a".repeat(64)),
+      manager.restore(serverId, containerId, backupId, `${serverId}/other.tar`, "a".repeat(64), 1024 * 1024),
       /does not match/,
     );
   } finally {
