@@ -4,9 +4,27 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-import { promisify } from "node:util";
+function deriveKey(
+  password: string,
+  salt: string,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scryptCallback(
+      password,
+      salt,
+      KEY_LENGTH,
+      SCRYPT_OPTIONS,
+      (error, derivedKey) => {
+        if (error) {
+          reject(error);
+          return;
+        }
 
-const scrypt = promisify(scryptCallback);
+        resolve(derivedKey as Buffer);
+      },
+    );
+  });
+}
 
 const KEY_LENGTH = 64;
 const SALT_LENGTH = 16;
@@ -34,12 +52,7 @@ export async function hashPassword(
 
   const salt = randomBytes(SALT_LENGTH).toString("hex");
 
-  const derivedKey = (await scrypt(
-    password,
-    salt,
-    KEY_LENGTH,
-    SCRYPT_OPTIONS
-  )) as Buffer;
+  const derivedKey = await deriveKey(password, salt);
 
   return [
     ALGORITHM,
@@ -93,16 +106,11 @@ export async function verifyPassword(
     }
 
     const expected = Buffer.from(
-      expectedHex,
+      expectedHex!,
       "hex"
     );
 
-    const actual = (await scrypt(
-      password,
-      salt,
-      KEY_LENGTH,
-      SCRYPT_OPTIONS
-    )) as Buffer;
+    const actual = await deriveKey(password, salt!);
 
     if (actual.length !== expected.length) {
       return false;

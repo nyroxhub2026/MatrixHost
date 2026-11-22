@@ -1,4 +1,10 @@
 import { execFile } from "node:child_process";
+import { isIP } from "node:net";
+
+import type {
+  DockerContainerCreateOptions,
+  DockerContainerSnapshot,
+} from "./docker.types.js";
 
 const CONTAINER_ID_PATTERN =
   /^[a-f0-9]{12,64}$/i;
@@ -12,30 +18,6 @@ const RESOURCE_NAME_PATTERN =
 const IMAGE_PATTERN =
   /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/;
 
-export type DockerContainerOperation =
-  | "start"
-  | "stop"
-  | "restart"
-  | "kill"
-  | "remove";
-
-export interface DockerClientOptions {
-  timeoutMs?: number;
-  maxBufferBytes?: number;
-  managedLabel?: string;
-}
-
-export interface DockerContainerSnapshot {
-  id: string;
-  name: string;
-  image: string;
-  status: string;
-  running: boolean;
-  exitCode: number | null;
-  serverId: string | null;
-  managed: boolean;
-}
-
 interface DockerInspectOutput {
   Id?: unknown;
   Name?: unknown;
@@ -48,24 +30,28 @@ interface DockerInspectOutput {
     Running?: unknown;
     ExitCode?: unknown;
   };
+  Mounts?: unknown;
 }
 
-export interface DockerCreateOptions {
-  serverId: string;
-  image: string;
-  name: string;
-  environment: Record<string, string>;
-  memoryBytes: number;
-  memorySwapBytes: number;
-  cpuPercent: number;
-  pidsLimit: number;
-  volumeName: string;
+export type DockerContainerOperation =
+  | "start"
+  | "stop"
+  | "restart"
+  | "kill"
+  | "remove";
+
+export interface DockerClientOptions {
+  timeoutMs?: number;
+  maxBufferBytes?: number;
+  managedLabel?: string;
+  allowedImagePrefixes?: string[];
 }
 
 export class DockerClient {
   private readonly timeoutMs: number;
   private readonly maxBufferBytes: number;
   private readonly managedLabel: string;
+  private readonly allowedImagePrefixes: string[];
 
   constructor(
     private readonly binary = "docker",
@@ -77,6 +63,8 @@ export class DockerClient {
 
     this.managedLabel =
       options.managedLabel ?? "matrixhost.managed";
+    this.allowedImagePrefixes =
+      options.allowedImagePrefixes ?? [];
 
     if (
       !Number.isInteger(this.timeoutMs) ||
@@ -87,6 +75,11 @@ export class DockerClient {
       this.maxBufferBytes > 16 * 1024 * 1024 ||
       !/^[a-zA-Z0-9_.-]{1,128}$/.test(
         this.managedLabel,
+      ) ||
+      this.allowedImagePrefixes.length > 50 ||
+      this.allowedImagePrefixes.some(
+        (prefix) =>
+          !/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/.test(prefix),
       )
     ) {
       throw new Error("Invalid Docker client configuration.");
@@ -165,6 +158,7 @@ export class DockerClient {
     const running = parsed.State?.Running;
     const exitCode = parsed.State?.ExitCode;
     const labels = parsed.Config?.Labels;
+    const mounts = parsed.Mounts;
 
     if (
       typeof id !== "string" ||
@@ -173,6 +167,7 @@ export class DockerClient {
       typeof image !== "string" ||
       typeof status !== "string" ||
       typeof running !== "boolean" ||
+      !Array.isArray(mounts) ||
       labels === null ||
       typeof labels !== "object" ||
       Array.isArray(labels)
@@ -182,9 +177,34 @@ export class DockerClient {
       );
     }
 
+    const mountTargets: string[] = [];
+
+    for (const mount of mounts) {
+      if (
+        mount === null ||
+        typeof mount !== "object" ||
+        Array.isArray(mount)
+      ) {
+        throw new Error("Docker returned invalid mount data.");
+      }
+
+      const destination =
+        (mount as Record<string, unknown>).Destination;
+
+      if (
+        typeof destination !== "string" ||
+        !destination.startsWith("/")
+      ) {
+        throw new Error("Docker returned invalid mount destination.");
+      }
+
+      mountTargets.push(destination);
+    }
+
     const labelMap = labels as Record<string, unknown>;
 
     const serverId = labelMap["matrixhost.server-id"];
+    const configHash = labelMap["matrixhost.config-hash"];
     const managed = labelMap[this.managedLabel] === "true";
 
     return {
@@ -204,11 +224,18 @@ export class DockerClient {
           ? serverId
           : null,
       managed,
+      configHash:
+        typeof configHash === "string" &&
+        /^[a-f0-9]{64}$/i.test(configHash)
+          ? configHash
+          : null,
+      mountTargets,
     };
   }
 
   async createContainer(
-    options: DockerCreateOptions,
+    options: DockerContainerCreateOptions,
+    signal?: AbortSignal,
   ): Promise<string> {
     if (!SERVER_ID_PATTERN.test(options.serverId)) {
       throw new Error("Invalid server ID.");
@@ -216,8 +243,12 @@ export class DockerClient {
 
     if (
       !RESOURCE_NAME_PATTERN.test(options.name) ||
-      !RESOURCE_NAME_PATTERN.test(options.volumeName) ||
-      !IMAGE_PATTERN.test(options.image)
+      !RESOURCE_NAME_PATTERN.test(options.networkName) ||
+      !/^[a-f0-9]{64}$/i.test(options.configHash) ||
+      !IMAGE_PATTERN.test(options.image) ||
+      !this.allowedImagePrefixes.some((prefix) =>
+        options.image.startsWith(prefix),
+      )
     ) {
       throw new Error(
         "Invalid Docker container configuration.",
@@ -232,6 +263,8 @@ export class DockerClient {
       !Number.isSafeInteger(options.cpuPercent) ||
       options.cpuPercent <= 0 ||
       options.cpuPercent > 100_000 ||
+      !Number.isSafeInteger(options.diskBytes) ||
+      options.diskBytes <= 0 ||
       !Number.isSafeInteger(options.pidsLimit) ||
       options.pidsLimit <= 0 ||
       options.pidsLimit > 100_000
@@ -239,6 +272,56 @@ export class DockerClient {
       throw new Error(
         "Invalid Docker resource limits.",
       );
+    }
+
+    if (
+      typeof options.startupCommand !== "string" ||
+      options.startupCommand.length === 0 ||
+      options.startupCommand.length > 16_384 ||
+      options.startupCommand.includes("\0")
+    ) {
+      throw new Error("Invalid Docker startup command.");
+    }
+
+    if (
+      options.environment === null ||
+      typeof options.environment !== "object" ||
+      Array.isArray(options.environment)
+    ) {
+      throw new Error("Invalid Docker environment.");
+    }
+
+    if (
+      !Array.isArray(options.ports) ||
+      options.ports.length === 0 ||
+      options.ports.length > 100
+    ) {
+      throw new Error("Invalid Docker port bindings.");
+    }
+
+    const seenPorts = new Set<string>();
+
+    for (const port of options.ports) {
+      if (
+        isIP(port.hostIp) === 0 ||
+        !Number.isInteger(port.hostPort) ||
+        port.hostPort < 1 ||
+        port.hostPort > 65535 ||
+        !Number.isInteger(port.containerPort) ||
+        port.containerPort < 1 ||
+        port.containerPort > 65535 ||
+        (port.protocol !== "tcp" && port.protocol !== "udp")
+      ) {
+        throw new Error("Invalid Docker port binding.");
+      }
+
+      const key = `${port.hostIp}:${port.hostPort}/${port.protocol}`;
+
+      if (seenPorts.has(key)) {
+        throw new Error("Duplicate Docker host port binding.");
+      }
+
+      seenPorts.add(key);
     }
 
     const entries = Object.entries(options.environment);
@@ -260,6 +343,9 @@ export class DockerClient {
       "--label",
       `${this.managedLabel}=true`,
 
+      "--label",
+      `matrixhost.config-hash=${options.configHash}`,
+
       "--memory",
       String(options.memoryBytes),
 
@@ -272,21 +358,38 @@ export class DockerClient {
       "--pids-limit",
       String(options.pidsLimit),
 
+      "--storage-opt",
+      `size=${options.diskBytes}B`,
+
       "--cap-drop",
       "ALL",
 
       "--security-opt",
       "no-new-privileges:true",
 
-      "--network",
-      "none",
+      "--init",
 
-      "--mount",
-      `type=volume,source=${options.volumeName},target=/home/container`,
+      "--network",
+      options.networkName,
 
       "--restart",
       "no",
+
+      "--entrypoint",
+      "/bin/sh",
     ];
+
+    for (const port of options.ports) {
+      const hostIp =
+        isIP(port.hostIp) === 6
+          ? `[${port.hostIp}]`
+          : port.hostIp;
+
+      args.push(
+        "--publish",
+        `${hostIp}:${port.hostPort}:${port.containerPort}/${port.protocol}`,
+      );
+    }
 
     for (const [key, value] of entries) {
       if (
@@ -303,9 +406,13 @@ export class DockerClient {
       args.push("--env", `${key}=${value}`);
     }
 
-    args.push(options.image);
+    args.push(
+      options.image,
+      "-lc",
+      options.startupCommand,
+    );
 
-    const result = await this.run(args);
+    const result = await this.run(args, signal);
     const containerId = result.stdout.trim();
 
     if (!CONTAINER_ID_PATTERN.test(containerId)) {
@@ -321,6 +428,7 @@ export class DockerClient {
     operation: DockerContainerOperation,
     containerId: string,
     expectedServerId: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     this.validateContainerId(containerId);
 
@@ -351,10 +459,12 @@ export class DockerClient {
       remove: "rm",
     };
 
-    await this.run([
-      commands[operation],
-      containerId,
-    ]);
+    const commandArgs =
+      operation === "remove"
+        ? ["rm", "--volumes", containerId]
+        : [commands[operation], containerId];
+
+    await this.run(commandArgs, signal);
   }
 
   private validateContainerId(
@@ -367,6 +477,7 @@ export class DockerClient {
 
   private run(
     args: string[],
+    signal?: AbortSignal,
   ): Promise<{
     stdout: string;
     stderr: string;
@@ -381,6 +492,7 @@ export class DockerClient {
           windowsHide: true,
           encoding: "utf8",
           shell: false,
+          ...(signal ? { signal } : {}),
         },
         (error, stdout, stderr) => {
           if (error) {

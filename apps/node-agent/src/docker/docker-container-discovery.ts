@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { DockerClient } from "./docker-client.js";
-import type { DockerContainerSnapshot } from "./docker-client.js";
+import type { DockerContainerSnapshot } from "./docker.types.js";
 
 const SERVER_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,7 +41,7 @@ export class DockerContainerDiscovery {
     }
 
     const container = await this.docker.inspectContainer(
-      ids[0],
+      ids[0]!,
     );
 
     if (
@@ -57,8 +57,45 @@ export class DockerContainerDiscovery {
     return container;
   }
 
+  async listManaged(): Promise<DockerContainerSnapshot[]> {
+    const ids = await this.listContainerIds();
+
+    if (ids.length > 100) {
+      throw new Error("Managed container inventory exceeds the heartbeat limit.");
+    }
+
+    const containers: DockerContainerSnapshot[] = [];
+    const seenServerIds = new Set<string>();
+
+    for (let index = 0; index < ids.length; index += 10) {
+      const batch = ids.slice(index, index + 10);
+      const snapshots = await Promise.all(
+        batch.map((id) => this.docker.inspectContainer(id)),
+      );
+
+      for (const snapshot of snapshots) {
+        if (
+          snapshot &&
+          snapshot.managed &&
+          snapshot.serverId
+        ) {
+          if (seenServerIds.has(snapshot.serverId)) {
+            throw new Error(
+              "Multiple managed containers exist for one server.",
+            );
+          }
+
+          seenServerIds.add(snapshot.serverId);
+          containers.push(snapshot);
+        }
+      }
+    }
+
+    return containers;
+  }
+
   private listContainerIds(
-    serverId: string,
+    serverId?: string,
   ): Promise<string[]> {
     const managedLabel =
       this.options.managedLabel ?? "matrixhost.managed";
@@ -93,8 +130,12 @@ export class DockerContainerDiscovery {
           "--no-trunc",
           "--filter",
           `label=${managedLabel}=true`,
-          "--filter",
-          `label=matrixhost.server-id=${serverId}`,
+          ...(serverId
+            ? [
+                "--filter",
+                `label=matrixhost.server-id=${serverId}`,
+              ]
+            : []),
         ],
         {
           timeout: timeoutMs,

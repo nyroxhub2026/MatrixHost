@@ -99,12 +99,13 @@ async function readDiskInfo(): Promise<{
 async function readDockerVersion(): Promise<string> {
   try {
     const { stdout } = await execFileAsync(
-      "docker",
+      process.env.DOCKER_BINARY || "docker",
       ["version", "--format", "{{.Server.Version}}"],
       {
         timeout: 5000,
         windowsHide: true,
         maxBuffer: 1024 * 1024,
+        shell: false,
       },
     );
 

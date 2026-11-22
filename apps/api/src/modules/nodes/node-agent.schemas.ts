@@ -1,7 +1,27 @@
 import { z } from "zod";
 
+const agentServerStatusSchema = z
+  .object({
+    serverId: z.uuid(),
+    containerId: z.string().regex(/^[a-f0-9]{12,64}$/i),
+    status: z.enum([
+      "running",
+      "created",
+      "exited",
+      "restarting",
+      "dead",
+      "paused",
+      "removing",
+      "unknown",
+    ]),
+    exitCode: z.number().int().nullable(),
+  })
+  .strict();
+
 export const agentHeartbeatSchema = z
   .object({
+    servers: z.array(agentServerStatusSchema).max(100).default([]),
+    serverInventoryComplete: z.boolean().default(false),
     agentVersion: z.string().trim().min(1).max(64),
     dockerVersion: z.string().trim().min(1).max(64),
 
@@ -28,7 +48,22 @@ export const agentHeartbeatSchema = z
       data.swapFreeBytes <= data.swapTotalBytes &&
       data.diskFreeBytes <= data.diskTotalBytes,
     "Free resources cannot exceed total resources."
-  );
+  )
+  .superRefine((data, context) => {
+    const seenServerIds = new Set<string>();
+
+    for (const [index, server] of data.servers.entries()) {
+      if (seenServerIds.has(server.serverId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["servers", index, "serverId"],
+          message: "Duplicate server status entry.",
+        });
+      }
+
+      seenServerIds.add(server.serverId);
+    }
+  });
 
 export type AgentHeartbeatInput = z.infer<
   typeof agentHeartbeatSchema

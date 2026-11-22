@@ -85,6 +85,12 @@ async function buildJobPayload(
       swapLimitBytes: bigint;
       diskLimitBytes: bigint;
       cpuLimit: number;
+      allocations: {
+        ipAddress: string;
+        port: number;
+        protocol: "TCP" | "UDP";
+        isPrimary: boolean;
+      }[];
     } | null;
   },
 ): Promise<Record<string, unknown>> {
@@ -110,10 +116,24 @@ async function buildJobPayload(
     throw new Error("Invalid CPU limit.");
   }
 
+  const primaryAllocations = job.server.allocations.filter(
+    (allocation) => allocation.isPrimary,
+  );
+
+  if (primaryAllocations.length !== 1) {
+    throw new Error("Server must have exactly one primary allocation.");
+  }
+
   return {
     image: job.server.dockerImage,
     startup: job.server.startupCommand,
     environment: parseEnvironment(job.server.environment),
+    ports: primaryAllocations.map((allocation) => ({
+      hostIp: allocation.ipAddress,
+      hostPort: allocation.port,
+      containerPort: allocation.port,
+      protocol: allocation.protocol.toLowerCase(),
+    })),
     limits: {
       memoryBytes: toSafeNumber(
         job.server.memoryLimitBytes,
@@ -169,6 +189,29 @@ async function failInvalidJob(
         },
         data: {
           status: "ERROR",
+        },
+      });
+
+      await transaction.nodeResourceReservation.updateMany({
+        where: {
+          serverId,
+          nodeId,
+          status: "ACTIVE",
+        },
+        data: {
+          status: "RELEASED",
+          releasedAt: now,
+        },
+      });
+
+      await transaction.allocation.updateMany({
+        where: {
+          serverId,
+          nodeId,
+        },
+        data: {
+          serverId: null,
+          isPrimary: false,
         },
       });
     }
@@ -230,7 +273,21 @@ export async function claimNextNodeJob(
       ],
     },
     include: {
-      server: true,
+      server: {
+        include: {
+          allocations: {
+            where: {
+              isPrimary: true,
+            },
+            select: {
+              ipAddress: true,
+              port: true,
+              protocol: true,
+              isPrimary: true,
+            },
+          },
+        },
+      },
     },
     orderBy: [
       { availableAt: "asc" },

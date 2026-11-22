@@ -1,6 +1,6 @@
 import { DockerClient } from "./docker-client.js";
-import { DockerVolumeManager } from "./docker-volume-manager.js";
 import { DockerContainerDiscovery } from "./docker-container-discovery.js";
+import { DockerNetworkManager } from "./docker-network-manager.js";
 import { DockerServerManager } from "./docker-server-manager.js";
 
 export interface DockerRuntimeStatus {
@@ -13,12 +13,12 @@ export class DockerRuntime {
 
   constructor(
     private readonly docker: DockerClient,
-    volumes: DockerVolumeManager,
+    networks: DockerNetworkManager,
     discovery: DockerContainerDiscovery,
   ) {
     this.servers = new DockerServerManager(
       docker,
-      volumes,
+      networks,
       discovery,
     );
   }
@@ -40,7 +40,6 @@ export class DockerRuntime {
   }
 
   async shutdown(): Promise<void> {
-    // Containers are intentionally not stopped here.
-    // Node Agent shutdown must not stop customer servers.
+    // Customer containers are intentionally left running.
   }
 }

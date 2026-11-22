@@ -1,6 +1,7 @@
 import type { DockerRuntime } from "../docker/docker-runtime.js";
 
 import { JobManager } from "./job-manager.js";
+import { createServerJobPayloadSchema } from "./job.schemas.js";
 
 import type {
   AgentJob,
@@ -33,6 +34,7 @@ function getServerId(job: AgentJob): string {
 function createHandler(
   runtime: DockerRuntime,
   type: AgentJobType,
+  defaultPidsLimit: number,
 ): AgentJobHandler {
   return {
     async execute(job, signal) {
@@ -44,34 +46,72 @@ function createHandler(
 
       switch (type) {
         case "CREATE_SERVER": {
-          throw new Error(
-            "CREATE_SERVER is disabled until startup validation, trusted image restrictions, network isolation and storage quota enforcement are implemented.",
+          const parsed = createServerJobPayloadSchema.safeParse(
+            job.payload,
           );
+
+          if (!parsed.success) {
+            throw new Error("Invalid server creation payload.");
+          }
+
+          const payload = parsed.data;
+          const memorySwapBytes =
+            payload.limits.memoryBytes + payload.limits.swapBytes;
+
+          if (!Number.isSafeInteger(memorySwapBytes)) {
+            throw new Error("Combined memory and swap limit is too large.");
+          }
+
+          const networkName = `matrixhost-${serverId}`;
+
+          const created = await runtime.servers.create({
+            serverId,
+            image: payload.image,
+            startupCommand: payload.startup,
+            environment: payload.environment,
+            limits: {
+              memoryBytes: payload.limits.memoryBytes,
+              memorySwapBytes,
+              cpuPercent: payload.limits.cpuPercent,
+              diskBytes: payload.limits.diskBytes,
+              pidsLimit: defaultPidsLimit,
+            },
+            networkName,
+            ports: payload.ports,
+          }, signal);
+
+          return {
+            serverId,
+            operation: type,
+            containerId: created.containerId,
+            networkName: created.networkName,
+            completedAt: new Date().toISOString(),
+          };
         }
 
         case "START_SERVER": {
-          await runtime.servers.start(serverId);
+          await runtime.servers.start(serverId, signal);
           break;
         }
 
         case "STOP_SERVER": {
-          await runtime.servers.stop(serverId);
+          await runtime.servers.stop(serverId, signal);
           break;
         }
 
         case "RESTART_SERVER": {
-          await runtime.servers.restart(serverId);
+          await runtime.servers.restart(serverId, signal);
           break;
         }
 
         case "KILL_SERVER": {
-          await runtime.servers.kill(serverId);
+          await runtime.servers.kill(serverId, signal);
           break;
         }
 
         case "DELETE_SERVER": {
           throw new Error(
-            "DELETE_SERVER is disabled until backup, ownership and volume deletion safeguards are implemented.",
+            "DELETE_SERVER is disabled until backup verification, retention policy and container/network cleanup safeguards are implemented.",
           );
         }
 
@@ -100,11 +140,12 @@ function createHandler(
 export function registerJobHandlers(
   manager: JobManager,
   runtime: DockerRuntime,
+  defaultPidsLimit = 512,
 ): void {
   for (const type of SUPPORTED_JOB_TYPES) {
     manager.registerHandler(
       type,
-      createHandler(runtime, type),
+      createHandler(runtime, type, defaultPidsLimit),
     );
   }
 }

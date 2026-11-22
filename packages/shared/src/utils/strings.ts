@@ -45,6 +45,6 @@ export function escapeHtml(value: string): string {
       "'": "&#39;"
     };
 
-    return entities[character];
+    return entities[character] ?? character;
   });
 }

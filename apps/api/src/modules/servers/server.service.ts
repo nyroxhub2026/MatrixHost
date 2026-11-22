@@ -1,4 +1,6 @@
 import { Prisma } from "@prisma/client";
+import { buildStartupCommand, resolveEggVariables } from "@matrixhost/egg-engine";
+import { z } from "zod";
 
 import { prisma } from "@matrixhost/database";
 import { AppError } from "@matrixhost/shared";
@@ -8,6 +10,65 @@ import type {
 } from "./server.schemas.js";
 
 const MB = 1024 * 1024;
+
+const eggScriptsSchema = z
+  .object({
+    privileged: z.boolean().optional(),
+    install: z
+      .object({
+        container: z.string().optional(),
+        entrypoint: z.string().optional(),
+        script: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+function parseEggScripts(value: Prisma.JsonValue) {
+  if (value === null) {
+    return {};
+  }
+
+  const parsed = eggScriptsSchema.safeParse(value);
+
+  if (!parsed.success) {
+    throw AppError.badRequest(
+      "Egg installer configuration is invalid.",
+    );
+  }
+
+  return parsed.data;
+}
+
+const eggVariableSchema = z
+  .object({
+    name: z.string().optional(),
+    description: z.string().optional(),
+    env_variable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
+    default_value: z
+      .union([z.string(), z.number(), z.boolean(), z.null()])
+      .optional(),
+    user_viewable: z.boolean().optional(),
+    user_editable: z.boolean().optional(),
+    rules: z.string().optional(),
+    field_type: z.string().optional(),
+  })
+  .passthrough();
+
+function parseEggVariables(
+  value: Prisma.JsonValue,
+) {
+  const parsed = z.array(eggVariableSchema).safeParse(value);
+
+  if (!parsed.success) {
+    throw AppError.badRequest(
+      "Egg variables configuration is invalid.",
+    );
+  }
+
+  return parsed.data;
+}
 
 function toBytes(valueMb: number): bigint {
   if (!Number.isFinite(valueMb) || valueMb < 0) {
@@ -41,7 +102,7 @@ function getDockerImage(images: Prisma.JsonValue): string {
     );
   }
 
-  const image = values[0].trim();
+  const image = values[0]!.trim();
 
   const imagePattern =
     /^(?:[a-z0-9.-]+(?::[0-9]{1,5})?\/)?[a-z0-9]+(?:[._/-][a-z0-9]+)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[a-f0-9]{64})?$/;
@@ -199,6 +260,20 @@ export async function createServer(
         );
       }
 
+      const eggScripts = parseEggScripts(egg.scripts);
+
+      if (eggScripts.privileged === true) {
+        throw AppError.forbidden(
+          "Privileged Egg installation scripts are not permitted."
+        );
+      }
+
+      if (eggScripts.install?.script?.trim()) {
+        throw AppError.conflict(
+          "This Egg requires an installer script. Isolated installer execution must be enabled before this Egg can be provisioned."
+        );
+      }
+
       const selectedNode = input.nodeId
         ? await tx.node.findUnique({
             where: { id: input.nodeId },
@@ -295,6 +370,32 @@ export async function createServer(
       );
 
       const image = getDockerImage(egg.dockerImages);
+      const eggVariables = parseEggVariables(egg.variables);
+      const allowedEnvironmentKeys = new Set(
+        eggVariables.map((variable) => variable.env_variable),
+      );
+      const unknownEnvironmentKeys = Object.keys(
+        input.environment,
+      ).filter((key) => !allowedEnvironmentKeys.has(key));
+
+      if (unknownEnvironmentKeys.length > 0) {
+        throw AppError.badRequest(
+          "Environment contains variables that are not defined by the selected Egg.",
+          unknownEnvironmentKeys,
+        );
+      }
+
+      const resolvedVariables = resolveEggVariables(
+        eggVariables,
+        input.environment,
+      );
+
+      if (!resolvedVariables.success) {
+        throw AppError.badRequest(
+          "Invalid Egg environment variables.",
+          resolvedVariables.errors,
+        );
+      }
 
       // Multiple allocations are not implemented yet.
       if (input.resources.allocations !== 1) {
@@ -327,6 +428,26 @@ export async function createServer(
         );
       }
 
+      // These values are controlled by the selected primary allocation,
+      // not by customer-supplied Egg variables.
+      const finalEnvironment = {
+        ...resolvedVariables.environment,
+        SERVER_IP: allocation.ipAddress,
+        SERVER_PORT: String(allocation.port),
+      };
+
+      const startup = buildStartupCommand(
+        egg.startupCommand,
+        finalEnvironment,
+      );
+
+      if (!startup.success) {
+        throw AppError.badRequest(
+          "Egg startup command could not be resolved.",
+          startup.errors,
+        );
+      }
+
       const server = await tx.server.create({
         data: {
           name: input.name,
@@ -339,7 +460,7 @@ export async function createServer(
           status: "INSTALLING",
 
           dockerImage: image,
-          startupCommand: egg.startupCommand,
+          startupCommand: startup.command,
 
           memoryLimitBytes: memoryBytes,
           swapLimitBytes: swapBytes,
@@ -351,7 +472,7 @@ export async function createServer(
           allocationLimit: input.resources.allocations,
           backupLimit: input.resources.backups,
 
-          environment: input.environment,
+          environment: finalEnvironment,
         },
       });
 

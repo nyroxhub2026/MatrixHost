@@ -1,6 +1,6 @@
 import { DockerClient } from "./docker-client.js";
-import { DockerVolumeManager } from "./docker-volume-manager.js";
 import { DockerContainerDiscovery } from "./docker-container-discovery.js";
+import { DockerNetworkManager } from "./docker-network-manager.js";
 import { DockerRuntime } from "./docker-runtime.js";
 
 import type { DockerConfig } from "./docker.config.js";
@@ -34,9 +34,11 @@ export function createDockerRuntime(
     timeoutMs,
     maxBufferBytes,
     managedLabel,
+    allowedImagePrefixes:
+      config?.DOCKER_ALLOWED_IMAGE_PREFIXES ?? [],
   });
 
-  const volumes = new DockerVolumeManager(binary, {
+  const networks = new DockerNetworkManager(binary, {
     timeoutMs,
     maxBufferBytes,
     managedLabel,
@@ -54,7 +56,7 @@ export function createDockerRuntime(
 
   return new DockerRuntime(
     docker,
-    volumes,
+    networks,
     discovery,
   );
 }

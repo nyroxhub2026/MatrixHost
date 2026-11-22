@@ -1,21 +1,38 @@
+import { z } from "zod";
+
 import type { AgentConfig } from "../config.js";
 import type { HardwareSnapshot } from "../resources/hardware.js";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
-interface ApiResponse {
-  success: boolean;
-  data?: {
-    node?: {
-      id: string;
-      name: string;
-      status: string;
-      lastHeartbeatAt: string;
-    };
-    message?: string;
-  };
+export interface AgentServerStatus {
+  serverId: string;
+  containerId: string;
+  status:
+    | "running"
+    | "created"
+    | "exited"
+    | "restarting"
+    | "dead"
+    | "paused"
+    | "removing"
+    | "unknown";
+  exitCode: number | null;
 }
+
+const heartbeatResponseSchema = z.object({
+  success: z.literal(true),
+  data: z.object({
+    node: z.object({
+      id: z.string().uuid(),
+      name: z.string(),
+      status: z.string(),
+      lastHeartbeatAt: z.iso.datetime(),
+    }),
+    message: z.string(),
+  }),
+});
 
 export class AgentHttpClient {
   private readonly baseUrl: URL;
@@ -59,6 +76,8 @@ export class AgentHttpClient {
 
   async sendHeartbeat(
     hardware: HardwareSnapshot,
+    servers: AgentServerStatus[] = [],
+    serverInventoryComplete = false,
   ): Promise<void> {
     const endpoint = new URL(
       `nodes/${encodeURIComponent(this.config.NODE_ID)}/heartbeat`,
@@ -68,6 +87,8 @@ export class AgentHttpClient {
     const payload = {
       agentVersion: this.config.AGENT_VERSION,
       ...hardware,
+      servers,
+      serverInventoryComplete,
     };
 
     let response: Response;
@@ -130,56 +151,96 @@ export class AgentHttpClient {
       response.headers.get("content-length");
 
     if (
-      contentLength &&
-      Number(contentLength) > MAX_RESPONSE_BYTES
+      contentLength !== null &&
+      (!/^\d+$/.test(contentLength) ||
+        Number(contentLength) > MAX_RESPONSE_BYTES)
     ) {
       throw new Error(
-        "MatrixHost API response is too large.",
+        "MatrixHost API response is too large or has an invalid length.",
       );
+    }
+
+    if (!response.body) {
+      throw new Error(
+        "MatrixHost API returned an empty response body.",
+      );
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        totalBytes += value.byteLength;
+
+        if (totalBytes > MAX_RESPONSE_BYTES) {
+          await reader.cancel();
+          throw new Error(
+            "MatrixHost API response is too large.",
+          );
+        }
+
+        chunks.push(value);
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "MatrixHost API response is too large."
+      ) {
+        throw error;
+      }
+
+      throw new Error(
+        "Unable to read MatrixHost API response.",
+      );
+    } finally {
+      reader.releaseLock();
     }
 
     let responseText: string;
 
     try {
-      responseText = await response.text();
+      const combined = new Uint8Array(totalBytes);
+      let offset = 0;
+
+      for (const chunk of chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+
+      responseText = new TextDecoder("utf-8", {
+        fatal: true,
+      }).decode(combined);
     } catch {
       throw new Error(
-        "Unable to read MatrixHost API response.",
+        "MatrixHost API returned invalid UTF-8.",
       );
     }
 
-    if (
-      Buffer.byteLength(responseText, "utf8") >
-      MAX_RESPONSE_BYTES
-    ) {
-      throw new Error(
-        "MatrixHost API response is too large.",
-      );
-    }
-
-    let result: unknown;
+    let responseJson: unknown;
 
     try {
-      result = JSON.parse(responseText);
+      responseJson = JSON.parse(responseText);
     } catch {
       throw new Error(
         "MatrixHost API returned invalid JSON.",
       );
     }
 
+    const parsed = heartbeatResponseSchema.safeParse(
+      responseJson,
+    );
+
     if (
-      typeof result !== "object" ||
-      result === null ||
-      !("success" in result) ||
-      result.success !== true ||
-      !("data" in result) ||
-      typeof result.data !== "object" ||
-      result.data === null ||
-      !("node" in result.data) ||
-      typeof result.data.node !== "object" ||
-      result.data.node === null ||
-      !("id" in result.data.node) ||
-      result.data.node.id !== this.config.NODE_ID
+      !parsed.success ||
+      parsed.data.data.node.id !== this.config.NODE_ID
     ) {
       throw new Error(
         "MatrixHost API did not confirm the heartbeat.",

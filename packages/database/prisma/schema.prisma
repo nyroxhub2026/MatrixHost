@@ -220,6 +220,7 @@ model Egg {
   startupCommand     String
   variables          Json
   config             Json
+  scripts            Json     @default("{}")
   features           Json
   sourceFormat       String   @default("PTERODACTYL_EGG")
   sourceVersion      String?

@@ -111,19 +111,120 @@ export async function completeNodeJob(
     );
   }
 
-  const updated = await prisma.nodeJob.updateMany({
-    where: {
-      id: jobId,
-      nodeId,
-      lockedBy: connectionId,
-      status: {
-        in: ["DELIVERED", "RUNNING"],
+  return prisma.$transaction(async (transaction) => {
+    const job = await transaction.nodeJob.findFirst({
+      where: {
+        id: jobId,
+        nodeId,
+        lockedBy: connectionId,
+        status: {
+          in: ["DELIVERED", "RUNNING"],
+        },
       },
-    },
-    data,
-  });
+      select: {
+        type: true,
+        serverId: true,
+      },
+    });
 
-  return updated.count === 1;
+    if (!job) {
+      return false;
+    }
+
+    const containerId =
+      typeof input.result?.containerId === "string"
+        ? input.result.containerId
+        : undefined;
+
+    const validCreateResult =
+      job.type !== "CREATE_SERVER" ||
+      !input.success ||
+      (containerId !== undefined &&
+        /^[a-f0-9]{12,64}$/i.test(containerId));
+
+    const completionData:
+      Prisma.NodeJobUpdateManyMutationInput = validCreateResult
+        ? data
+        : {
+            ...data,
+            status: "FAILED",
+            errorCode: "INVALID_AGENT_RESULT",
+            errorMessage:
+              "The Agent did not return a valid container identifier.",
+          };
+
+    const updated = await transaction.nodeJob.updateMany({
+      where: {
+        id: jobId,
+        nodeId,
+        lockedBy: connectionId,
+        status: {
+          in: ["DELIVERED", "RUNNING"],
+        },
+      },
+      data: completionData,
+    });
+
+    if (updated.count !== 1) {
+      return false;
+    }
+
+    if (job.serverId) {
+      let nextStatus:
+        | "OFFLINE"
+        | "RUNNING"
+        | "ERROR"
+        | undefined;
+
+      if (
+        job.type === "CREATE_SERVER" &&
+        (!input.success || !validCreateResult)
+      ) {
+        nextStatus = "ERROR";
+      } else if (input.success) {
+        switch (job.type) {
+          case "CREATE_SERVER":
+          case "STOP_SERVER":
+          case "KILL_SERVER":
+            nextStatus = "OFFLINE";
+            break;
+          case "START_SERVER":
+          case "RESTART_SERVER":
+            nextStatus = "RUNNING";
+            break;
+          default:
+            break;
+        }
+      }
+
+      if (nextStatus) {
+        await transaction.server.updateMany({
+          where: {
+            id: job.serverId,
+            nodeId,
+          },
+          data: {
+            status: nextStatus,
+            ...(input.success &&
+            validCreateResult &&
+            job.type === "CREATE_SERVER"
+              ? {
+                  installedAt: now,
+                  containerId: containerId!,
+                }
+              : {}),
+            ...(input.success &&
+            (job.type === "START_SERVER" ||
+              job.type === "RESTART_SERVER")
+              ? { lastStartedAt: now }
+              : {}),
+          },
+        });
+      }
+    }
+
+    return true;
+  });
 }
 
 export async function extendNodeJobLease(

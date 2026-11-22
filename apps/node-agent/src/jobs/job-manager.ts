@@ -227,6 +227,13 @@ export class JobManager {
     controller: AbortController,
   ): Promise<AgentJobResult> {
     try {
+      // Let the WebSocket bridge send job_ack before execution starts.
+      await Promise.resolve();
+
+      if (controller.signal.aborted) {
+        throw new Error("Job was aborted.");
+      }
+
       const result = await handler.execute(
         job,
         controller.signal,

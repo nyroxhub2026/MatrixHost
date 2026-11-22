@@ -29,12 +29,22 @@ const resourceLimitsSchema = z
   })
   .strict();
 
+const portBindingSchema = z
+  .object({
+    hostIp: z.string().min(2).max(45),
+    hostPort: z.number().int().min(1).max(65535),
+    containerPort: z.number().int().min(1).max(65535),
+    protocol: z.enum(["tcp", "udp"]),
+  })
+  .strict();
+
 export const createServerJobPayloadSchema = z
   .object({
     image: z.string().min(1).max(255),
-    startup: z.string().min(1).max(4096),
+    startup: z.string().min(1).max(16384),
     environment: environmentSchema,
     limits: resourceLimitsSchema,
+    ports: z.array(portBindingSchema).min(1).max(100),
   })
   .strict();
 

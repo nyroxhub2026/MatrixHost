@@ -26,7 +26,7 @@ export function validateInstaller(
     };
   }
 
-  if (installer.privileged === true) {
+  if (egg.scripts?.privileged === true) {
     errors.push("Privileged installation is not permitted.");
   }
 

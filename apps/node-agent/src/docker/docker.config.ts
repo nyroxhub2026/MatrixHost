@@ -33,6 +33,31 @@ const dockerConfigSchema = z
 
     DOCKER_REQUIRE_AVAILABLE: booleanSchema,
 
+    DOCKER_DEFAULT_PIDS_LIMIT: z.coerce
+      .number()
+      .int()
+      .min(64)
+      .max(100000)
+      .default(512),
+
+    DOCKER_ALLOWED_IMAGE_PREFIXES: z
+      .string()
+      .min(1)
+      .max(2048)
+      .default("ghcr.io/pterodactyl/yolks:")
+      .transform((value) =>
+        value.split(",").map((entry) => entry.trim()).filter(Boolean),
+      )
+      .refine(
+        (prefixes) =>
+          prefixes.length > 0 &&
+          prefixes.length <= 50 &&
+          prefixes.every((prefix) =>
+            /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/.test(prefix),
+          ),
+        "Invalid Docker image allowlist prefixes.",
+      ),
+
     DOCKER_MANAGED_LABEL: z
       .string()
       .regex(/^[a-zA-Z0-9_.-]{1,128}$/)
@@ -55,6 +80,10 @@ export function loadDockerConfig(
       env.DOCKER_MAX_BUFFER_BYTES,
     DOCKER_REQUIRE_AVAILABLE:
       env.DOCKER_REQUIRE_AVAILABLE,
+    DOCKER_DEFAULT_PIDS_LIMIT:
+      env.DOCKER_DEFAULT_PIDS_LIMIT,
+    DOCKER_ALLOWED_IMAGE_PREFIXES:
+      env.DOCKER_ALLOWED_IMAGE_PREFIXES,
     DOCKER_MANAGED_LABEL:
       env.DOCKER_MANAGED_LABEL,
   });

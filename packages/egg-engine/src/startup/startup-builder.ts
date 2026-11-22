@@ -27,12 +27,17 @@ export function buildStartupCommand(
   const command = template.replace(
     PLACEHOLDER_PATTERN,
     (_match, variableName: string) => {
-      if (!Object.prototype.hasOwnProperty.call(environment, variableName)) {
+      const value = environment[variableName];
+
+      if (
+        !Object.prototype.hasOwnProperty.call(environment, variableName) ||
+        value === undefined
+      ) {
         errors.push(`Missing startup variable: ${variableName}`);
         return "";
       }
 
-      return shellQuote(environment[variableName]);
+      return shellQuote(value);
     }
   );
 
@@ -47,7 +52,7 @@ export function findStartupPlaceholders(template: string): string[] {
   const placeholders = new Set<string>();
 
   for (const match of template.matchAll(PLACEHOLDER_PATTERN)) {
-    placeholders.add(match[1]);
+    placeholders.add(match[1]!);
   }
 
   return [...placeholders];

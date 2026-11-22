@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 import type {
   DockerCreateOptions,
   DockerResourceLimits,
@@ -88,8 +90,7 @@ export function validateDockerCreateOptions(
   }
 
   if (
-    !RESOURCE_NAME_PATTERN.test(options.networkName) ||
-    !RESOURCE_NAME_PATTERN.test(options.volumeName)
+    !RESOURCE_NAME_PATTERN.test(options.networkName)
   ) {
     throw new Error("Invalid Docker resource name.");
   }
@@ -122,6 +123,41 @@ export function validateDockerCreateOptions(
     ) {
       throw new Error(`Invalid environment variable: ${key}.`);
     }
+  }
+
+  if (
+    !Array.isArray(options.ports) ||
+    options.ports.length === 0 ||
+    options.ports.length > 100
+  ) {
+    throw new Error("At least one valid Docker port binding is required.");
+  }
+
+  const seenBindings = new Set<string>();
+
+  for (const port of options.ports) {
+    if (
+      typeof port.hostIp !== "string" ||
+      isIP(port.hostIp) === 0 ||
+      !Number.isInteger(port.hostPort) ||
+      port.hostPort < 1 ||
+      port.hostPort > 65535 ||
+      !Number.isInteger(port.containerPort) ||
+      port.containerPort < 1 ||
+      port.containerPort > 65535 ||
+      (port.protocol !== "tcp" && port.protocol !== "udp")
+    ) {
+      throw new Error("Invalid Docker port binding.");
+    }
+
+    const bindingKey =
+      `${port.hostIp}:${port.hostPort}/${port.protocol}`;
+
+    if (seenBindings.has(bindingKey)) {
+      throw new Error("Duplicate Docker host port binding.");
+    }
+
+    seenBindings.add(bindingKey);
   }
 
   validateDockerResourceLimits(options.limits);
