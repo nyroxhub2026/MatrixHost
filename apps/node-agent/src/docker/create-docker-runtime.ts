@@ -36,7 +36,11 @@ export function createDockerRuntime(
     managedLabel,
   });
 
-  const volumes = new DockerVolumeManager(binary);
+  const volumes = new DockerVolumeManager(binary, {
+    timeoutMs,
+    maxBufferBytes,
+    managedLabel,
+  });
 
   const discovery = new DockerContainerDiscovery(
     docker,
