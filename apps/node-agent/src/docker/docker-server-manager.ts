@@ -256,6 +256,7 @@ export class DockerServerManager {
         environment: options.installer.environment,
         limits: {
           memoryBytes: options.limits.memoryBytes,
+          memorySwapBytes: options.limits.memorySwapBytes,
           cpuPercent: options.limits.cpuPercent,
           diskBytes: options.limits.diskBytes,
           pidsLimit: options.limits.pidsLimit,
