@@ -1,8 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
-
 const SERVER_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CONTAINER_ID_PATTERN = /^[a-f0-9]{12,64}$/i;
@@ -91,6 +89,10 @@ export class DockerInstallerRunner {
   ): Promise<{ installHash: string }> {
     this.validate(options);
 
+    if (signal?.aborted) {
+      throw new Error("Egg installation was cancelled.");
+    }
+
     const installHash = createHash("sha256")
       .update(JSON.stringify({
         image: options.image,
@@ -178,13 +180,16 @@ export class DockerInstallerRunner {
         "/mnt/server",
       ];
 
-      for (const [key, value] of Object.entries(options.environment)) {
+      const installerEnvironment = {
+        ...options.environment,
+        SERVER_LOCATION: "/mnt/server",
+      };
+
+      for (const [key, value] of Object.entries(installerEnvironment)) {
         execArgs.push("--env", `${key}=${value}`);
       }
 
       execArgs.push(
-        "--env",
-        "SERVER_LOCATION=/mnt/server",
         installerContainerId,
         entrypoint,
         "-s",
