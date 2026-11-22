@@ -59,14 +59,9 @@ export class DockerContainerManager {
         message: `Container ${operation} completed.`,
       };
     } catch (error) {
-      const reason =
-        error instanceof Error
-          ? error.message
-          : "Unknown Docker error.";
-
       return {
         success: false,
-        message: `Container ${operation} failed: ${reason}`,
+        message: `Container ${operation} failed. Check the Agent's restricted diagnostic logs.`,
       };
     }
   }
