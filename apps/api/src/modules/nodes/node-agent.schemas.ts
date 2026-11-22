@@ -47,7 +47,22 @@ export const agentHeartbeatSchema = z
       data.swapFreeBytes <= data.swapTotalBytes &&
       data.diskFreeBytes <= data.diskTotalBytes,
     "Free resources cannot exceed total resources."
-  );
+  )
+  .superRefine((data, context) => {
+    const seenServerIds = new Set<string>();
+
+    for (const [index, server] of data.servers.entries()) {
+      if (seenServerIds.has(server.serverId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["servers", index, "serverId"],
+          message: "Duplicate server status entry.",
+        });
+      }
+
+      seenServerIds.add(server.serverId);
+    }
+  });
 
 export type AgentHeartbeatInput = z.infer<
   typeof agentHeartbeatSchema
