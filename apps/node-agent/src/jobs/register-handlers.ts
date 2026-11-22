@@ -76,7 +76,7 @@ function createHandler(runtime: DockerRuntime, type: AgentJobType, defaultPidsLi
           const container = await runtime.servers.find(serverId);
           if (!container || !container.managed || container.serverId !== serverId) throw new Error("Owned server container was not found.");
           if (container.running) await runtime.servers.stop(serverId, signal);
-          const result = await runtime.backups.restore(serverId, container.id, payload.backupId, payload.storagePath, payload.checksum, signal);
+          const result = await runtime.backups.restore(serverId, container.id, payload.backupId, payload.storagePath, payload.checksum, payload.maxBytes, signal);
           return { serverId, operation: type, backupId: payload.backupId, ...result, completedAt: new Date().toISOString() };
         }
         default: {
