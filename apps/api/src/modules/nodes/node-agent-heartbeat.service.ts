@@ -90,7 +90,7 @@ export async function updateNodeHeartbeat(
             nodeId,
             containerId: server.containerId,
             status: {
-              notIn: ["INSTALLING", "SUSPENDED", "ERROR"],
+              notIn: ["INSTALLING", "SUSPENDED", "ERROR", "RESTORING"],
             },
           },
           data: {
