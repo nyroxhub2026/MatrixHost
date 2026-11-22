@@ -66,6 +66,66 @@ export class DockerInstallerRunner {
     }
   }
 
+  async cleanupOrphanedInstallers(): Promise<number> {
+    const listed = await this.run([
+      "ps",
+      "--all",
+      "--quiet",
+      "--filter",
+      `label=${this.managedLabel}=true`,
+      "--filter",
+      "label=matrixhost.installer=true",
+    ]);
+
+    const containerIds = listed.stdout
+      .split(/\\s+/)
+      .map((value) => value.trim())
+      .filter((value) => CONTAINER_ID_PATTERN.test(value));
+
+    let removed = 0;
+
+    for (const containerId of containerIds) {
+      const inspected = await this.run([
+        "inspect",
+        "--format",
+        "{{json .Config.Labels}}",
+        containerId,
+      ]);
+
+      let labels: unknown;
+
+      try {
+        labels = JSON.parse(inspected.stdout);
+      } catch {
+        continue;
+      }
+
+      if (
+        labels === null ||
+        typeof labels !== "object" ||
+        Array.isArray(labels)
+      ) {
+        continue;
+      }
+
+      const labelMap = labels as Record<string, unknown>;
+
+      if (
+        labelMap[this.managedLabel] !== "true" ||
+        labelMap["matrixhost.installer"] !== "true" ||
+        typeof labelMap["matrixhost.server-id"] !== "string" ||
+        !SERVER_ID_PATTERN.test(labelMap["matrixhost.server-id"] as string)
+      ) {
+        continue;
+      }
+
+      await this.run(["rm", "--force", "--volumes", containerId]);
+      removed += 1;
+    }
+
+    return removed;
+  }
+
   async isInstalled(
     targetContainerId: string,
     serverId: string,
