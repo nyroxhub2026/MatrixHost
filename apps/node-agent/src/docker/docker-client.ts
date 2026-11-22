@@ -1,8 +1,5 @@
 import { execFile } from "node:child_process";
 
-const COMMAND_TIMEOUT_MS = 30_000;
-const MAX_BUFFER_BYTES = 1024 * 1024;
-
 const CONTAINER_ID_PATTERN =
   /^[a-f0-9]{12,64}$/i;
 
@@ -22,6 +19,12 @@ export type DockerContainerOperation =
   | "kill"
   | "remove";
 
+export interface DockerClientOptions {
+  timeoutMs?: number;
+  maxBufferBytes?: number;
+  managedLabel?: string;
+}
+
 export interface DockerContainerSnapshot {
   id: string;
   name: string;
@@ -30,6 +33,7 @@ export interface DockerContainerSnapshot {
   running: boolean;
   exitCode: number | null;
   serverId: string | null;
+  managed: boolean;
 }
 
 interface DockerInspectOutput {
@@ -59,9 +63,35 @@ export interface DockerCreateOptions {
 }
 
 export class DockerClient {
+  private readonly timeoutMs: number;
+  private readonly maxBufferBytes: number;
+  private readonly managedLabel: string;
+
   constructor(
     private readonly binary = "docker",
-  ) {}
+    options: DockerClientOptions = {},
+  ) {
+    this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.maxBufferBytes =
+      options.maxBufferBytes ?? 1024 * 1024;
+
+    this.managedLabel =
+      options.managedLabel ?? "matrixhost.managed";
+
+    if (
+      !Number.isInteger(this.timeoutMs) ||
+      this.timeoutMs < 1000 ||
+      this.timeoutMs > 120_000 ||
+      !Number.isInteger(this.maxBufferBytes) ||
+      this.maxBufferBytes < 65_536 ||
+      this.maxBufferBytes > 16 * 1024 * 1024 ||
+      !/^[a-zA-Z0-9_.-]{1,128}$/.test(
+        this.managedLabel,
+      )
+    ) {
+      throw new Error("Invalid Docker client configuration.");
+    }
+  }
 
   async version(): Promise<string> {
     const output = await this.run([
@@ -110,7 +140,7 @@ export class DockerClient {
     } catch (error) {
       if (
         error instanceof Error &&
-        error.message.includes("No such object")
+        /No such (object|container)/i.test(error.message)
       ) {
         return null;
       }
@@ -121,9 +151,7 @@ export class DockerClient {
     let parsed: DockerInspectOutput;
 
     try {
-      parsed = JSON.parse(
-        result.stdout,
-      ) as DockerInspectOutput;
+      parsed = JSON.parse(result.stdout) as DockerInspectOutput;
     } catch {
       throw new Error(
         "Docker returned invalid inspect data.",
@@ -140,6 +168,7 @@ export class DockerClient {
 
     if (
       typeof id !== "string" ||
+      !CONTAINER_ID_PATTERN.test(id) ||
       typeof name !== "string" ||
       typeof image !== "string" ||
       typeof status !== "string" ||
@@ -153,9 +182,10 @@ export class DockerClient {
       );
     }
 
-    const serverId = (
-      labels as Record<string, unknown>
-    )["matrixhost.server-id"];
+    const labelMap = labels as Record<string, unknown>;
+
+    const serverId = labelMap["matrixhost.server-id"];
+    const managed = labelMap[this.managedLabel] === "true";
 
     return {
       id,
@@ -173,6 +203,7 @@ export class DockerClient {
         SERVER_ID_PATTERN.test(serverId)
           ? serverId
           : null,
+      managed,
     };
   }
 
@@ -210,39 +241,52 @@ export class DockerClient {
       );
     }
 
-    const args = [
-      "create",
-      "--name",
-      options.name,
-      "--label",
-      `matrixhost.server-id=${options.serverId}`,
-      "--label",
-      "matrixhost.managed=true",
-      "--memory",
-      String(options.memoryBytes),
-      "--memory-swap",
-      String(options.memorySwapBytes),
-      "--cpus",
-      String(options.cpuPercent / 100),
-      "--pids-limit",
-      String(options.pidsLimit),
-      "--network",
-      "none",
-      "--mount",
-      `type=volume,source=${options.volumeName},target=/home/container`,
-      "--restart",
-      "unless-stopped",
-    ];
-
-    const entries = Object.entries(
-      options.environment,
-    );
+    const entries = Object.entries(options.environment);
 
     if (entries.length > 100) {
       throw new Error(
         "Too many Docker environment variables.",
       );
     }
+
+    const args = [
+      "create",
+      "--name",
+      options.name,
+
+      "--label",
+      `matrixhost.server-id=${options.serverId}`,
+
+      "--label",
+      `${this.managedLabel}=true`,
+
+      "--memory",
+      String(options.memoryBytes),
+
+      "--memory-swap",
+      String(options.memorySwapBytes),
+
+      "--cpus",
+      String(options.cpuPercent / 100),
+
+      "--pids-limit",
+      String(options.pidsLimit),
+
+      "--cap-drop",
+      "ALL",
+
+      "--security-opt",
+      "no-new-privileges:true",
+
+      "--network",
+      "none",
+
+      "--mount",
+      `type=volume,source=${options.volumeName},target=/home/container`,
+
+      "--restart",
+      "no",
+    ];
 
     for (const [key, value] of entries) {
       if (
@@ -284,13 +328,12 @@ export class DockerClient {
       throw new Error("Invalid server ID.");
     }
 
-    const container = await this.inspectContainer(
-      containerId,
-    );
+    const container = await this.inspectContainer(containerId);
 
     if (
       !container ||
-      container.serverId !== expectedServerId
+      container.serverId !== expectedServerId ||
+      !container.managed
     ) {
       throw new Error(
         "Docker container ownership verification failed.",
@@ -318,9 +361,7 @@ export class DockerClient {
     containerId: string,
   ): void {
     if (!CONTAINER_ID_PATTERN.test(containerId)) {
-      throw new Error(
-        "Invalid Docker container ID.",
-      );
+      throw new Error("Invalid Docker container ID.");
     }
   }
 
@@ -335,8 +376,8 @@ export class DockerClient {
         this.binary,
         args,
         {
-          timeout: COMMAND_TIMEOUT_MS,
-          maxBuffer: MAX_BUFFER_BYTES,
+          timeout: this.timeoutMs,
+          maxBuffer: this.maxBufferBytes,
           windowsHide: true,
           encoding: "utf8",
           shell: false,
