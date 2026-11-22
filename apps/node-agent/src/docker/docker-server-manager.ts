@@ -144,7 +144,6 @@ export class DockerServerManager {
   private async requireContainer(serverId: string) {
     const container = await this.discovery.findByServerId(
       serverId,
-      signal,
     );
 
     if (
