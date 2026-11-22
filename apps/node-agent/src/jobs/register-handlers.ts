@@ -78,7 +78,7 @@ function createHandler(
             },
             networkName,
             ports: payload.ports,
-          });
+          }, signal);
 
           return {
             serverId,
