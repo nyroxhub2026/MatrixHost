@@ -8,14 +8,14 @@ import type {
   AgentJobType,
 } from "./job.types.js";
 
-const SUPPORTED_JOB_TYPES: AgentJobType[] = [
+const SUPPORTED_JOB_TYPES = [
   "CREATE_SERVER",
   "START_SERVER",
   "STOP_SERVER",
   "RESTART_SERVER",
   "KILL_SERVER",
   "DELETE_SERVER",
-];
+] as const satisfies readonly AgentJobType[];
 
 function getServerId(job: AgentJob): string {
   if (
@@ -45,7 +45,7 @@ function createHandler(
       switch (type) {
         case "CREATE_SERVER": {
           throw new Error(
-            "CREATE_SERVER is not enabled yet. Startup configuration, trusted image validation and storage quota enforcement must be completed first.",
+            "CREATE_SERVER is disabled until startup validation, trusted image restrictions, network isolation and storage quota enforcement are implemented.",
           );
         }
 
@@ -71,12 +71,13 @@ function createHandler(
 
         case "DELETE_SERVER": {
           throw new Error(
-            "DELETE_SERVER is not enabled yet. Backup and volume deletion safeguards must be completed first.",
+            "DELETE_SERVER is disabled until backup, ownership and volume deletion safeguards are implemented.",
           );
         }
 
         default: {
           const exhaustiveCheck: never = type;
+
           throw new Error(
             `Unsupported job type: ${String(exhaustiveCheck)}`,
           );
