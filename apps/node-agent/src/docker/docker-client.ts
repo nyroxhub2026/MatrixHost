@@ -6,6 +6,9 @@ const MAX_BUFFER_BYTES = 1024 * 1024;
 const CONTAINER_ID_PATTERN =
   /^[a-f0-9]{12,64}$/i;
 
+const SERVER_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export type DockerContainerOperation =
   | "start"
   | "stop"
@@ -20,6 +23,7 @@ export interface DockerContainerSnapshot {
   status: string;
   running: boolean;
   exitCode: number | null;
+  serverId: string | null;
 }
 
 interface DockerInspectOutput {
@@ -27,6 +31,7 @@ interface DockerInspectOutput {
   Name?: unknown;
   Config?: {
     Image?: unknown;
+    Labels?: unknown;
   };
   State?: {
     Status?: unknown;
@@ -70,25 +75,17 @@ export class DockerClient {
   ): Promise<DockerContainerSnapshot | null> {
     this.validateContainerId(containerId);
 
-    let output: string;
-
-    try {
-      const result = await this.run([
-        "inspect",
-        "--format",
-        "{{json .}}",
-        containerId,
-      ]);
-
-      output = result.stdout;
-    } catch {
-      return null;
-    }
+    const result = await this.run([
+      "inspect",
+      "--format",
+      "{{json .}}",
+      containerId,
+    ]);
 
     let parsed: DockerInspectOutput;
 
     try {
-      parsed = JSON.parse(output) as DockerInspectOutput;
+      parsed = JSON.parse(result.stdout) as DockerInspectOutput;
     } catch {
       throw new Error("Docker returned invalid inspect data.");
     }
@@ -99,16 +96,24 @@ export class DockerClient {
     const status = parsed.State?.Status;
     const running = parsed.State?.Running;
     const exitCode = parsed.State?.ExitCode;
+    const labels = parsed.Config?.Labels;
 
     if (
       typeof id !== "string" ||
       typeof name !== "string" ||
       typeof image !== "string" ||
       typeof status !== "string" ||
-      typeof running !== "boolean"
+      typeof running !== "boolean" ||
+      labels === null ||
+      typeof labels !== "object" ||
+      Array.isArray(labels)
     ) {
       throw new Error("Docker returned incomplete container data.");
     }
+
+    const serverId = (
+      labels as Record<string, unknown>
+    )["matrixhost.server-id"];
 
     return {
       id,
@@ -121,19 +126,34 @@ export class DockerClient {
         Number.isInteger(exitCode)
           ? exitCode
           : null,
+      serverId:
+        typeof serverId === "string" &&
+        SERVER_ID_PATTERN.test(serverId)
+          ? serverId
+          : null,
     };
   }
 
   async containerCommand(
     operation: DockerContainerOperation,
     containerId: string,
+    expectedServerId: string,
   ): Promise<void> {
     this.validateContainerId(containerId);
 
-    const commands: Record<
-      DockerContainerOperation,
-      string
-    > = {
+    if (!SERVER_ID_PATTERN.test(expectedServerId)) {
+      throw new Error("Invalid server ID.");
+    }
+
+    const container = await this.inspectContainer(containerId);
+
+    if (!container || container.serverId !== expectedServerId) {
+      throw new Error(
+        "Docker container ownership verification failed.",
+      );
+    }
+
+    const commands: Record<DockerContainerOperation, string> = {
       start: "start",
       stop: "stop",
       restart: "restart",
@@ -181,14 +201,10 @@ export class DockerClient {
                 }`,
               ),
             );
-
             return;
           }
 
-          resolve({
-            stdout,
-            stderr,
-          });
+          resolve({ stdout, stderr });
         },
       );
     });
