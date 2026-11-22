@@ -1,3 +1,12 @@
+export type DockerPortProtocol = "tcp" | "udp";
+
+export interface DockerPortBinding {
+  hostIp: string;
+  hostPort: number;
+  containerPort: number;
+  protocol: DockerPortProtocol;
+}
+
 export interface DockerResourceLimits {
   memoryBytes: number;
   memorySwapBytes: number;
@@ -13,7 +22,22 @@ export interface DockerCreateOptions {
   environment: Record<string, string>;
   limits: DockerResourceLimits;
   networkName: string;
-  volumeName: string;
+  ports: DockerPortBinding[];
+}
+
+export interface DockerContainerCreateOptions {
+  serverId: string;
+  image: string;
+  name: string;
+  startupCommand: string;
+  environment: Record<string, string>;
+  memoryBytes: number;
+  memorySwapBytes: number;
+  cpuPercent: number;
+  diskBytes: number;
+  pidsLimit: number;
+  networkName: string;
+  ports: DockerPortBinding[];
 }
 
 export interface DockerContainerSnapshot {
@@ -30,6 +54,7 @@ export interface DockerContainerSnapshot {
 export interface DockerCreateResult {
   containerId: string;
   serverId: string;
+  networkName: string;
 }
 
 export interface DockerCommandResult {
