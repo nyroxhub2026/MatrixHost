@@ -114,7 +114,7 @@ export async function restoreServerBackup(userId: string, serverId: string, back
         type: "RESTORE_BACKUP",
         status: "QUEUED",
         idempotencyKey: `restore-backup:${backup.id}:${Date.now()}`,
-        payload: { backupId: backup.id },
+        payload: { backupId: backup.id, previousStatus: server.status },
         maxAttempts: 3,
         availableAt: new Date(),
       },
