@@ -2,6 +2,7 @@ import { DockerClient } from "./docker-client.js";
 import { DockerContainerDiscovery } from "./docker-container-discovery.js";
 import { DockerNetworkManager } from "./docker-network-manager.js";
 import { DockerInstallerRunner } from "./docker-installer-runner.js";
+import { DockerBackupManager } from "./docker-backup-manager.js";
 import { DockerServerManager } from "./docker-server-manager.js";
 
 export interface DockerRuntimeStatus {
@@ -17,13 +18,9 @@ export class DockerRuntime {
     networks: DockerNetworkManager,
     discovery: DockerContainerDiscovery,
     private readonly installer: DockerInstallerRunner,
+    readonly backups: DockerBackupManager,
   ) {
-    this.servers = new DockerServerManager(
-      docker,
-      networks,
-      discovery,
-      installer,
-    );
+    this.servers = new DockerServerManager(docker, networks, discovery, installer);
   }
 
   async cleanupOrphanedInstallers(): Promise<number> {
@@ -32,21 +29,13 @@ export class DockerRuntime {
 
   async status(): Promise<DockerRuntimeStatus> {
     try {
-      const version = await this.docker.version();
-
-      return {
-        available: true,
-        version,
-      };
+      return { available: true, version: await this.docker.version() };
     } catch {
-      return {
-        available: false,
-        version: null,
-      };
+      return { available: false, version: null };
     }
   }
 
   async shutdown(): Promise<void> {
-    // Customer containers are intentionally left running.
+    // Customer containers and verified backup archives are intentionally retained.
   }
 }
