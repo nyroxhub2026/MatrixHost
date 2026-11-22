@@ -59,6 +59,7 @@ export interface DockerContainerSnapshot {
   serverId: string | null;
   managed: boolean;
   configHash: string | null;
+  mountTargets: string[];
 }
 
 export interface DockerCreateResult {
