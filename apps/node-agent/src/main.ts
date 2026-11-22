@@ -166,8 +166,56 @@ async function main(): Promise<void> {
     }
 
     const hardware = await collectHardwareSnapshot();
+    let serverStatuses = [];
 
-    await httpClient.sendHeartbeat(hardware);
+    if (docker.initialHealth.healthy) {
+      try {
+        const containers = await docker.runtime.servers.list();
+
+        serverStatuses = containers
+          .filter(
+            (container) =>
+              container.serverId !== null &&
+              container.managed,
+          )
+          .slice(0, 100)
+          .map((container) => ({
+            serverId: container.serverId!,
+            containerId: container.id,
+            status: [
+              "running",
+              "created",
+              "exited",
+              "restarting",
+              "dead",
+              "paused",
+              "removing",
+            ].includes(container.status)
+              ? container.status as
+                  | "running"
+                  | "created"
+                  | "exited"
+                  | "restarting"
+                  | "dead"
+                  | "paused"
+                  | "removing"
+              : "unknown" as const,
+            exitCode: container.exitCode,
+          }));
+      } catch (error) {
+        console.warn(
+          "[MatrixHost Agent] Container inventory could not be collected:",
+          error instanceof Error
+            ? error.message
+            : "Unknown inventory error.",
+        );
+      }
+    }
+
+    await httpClient.sendHeartbeat(
+      hardware,
+      serverStatuses,
+    );
 
     console.info(
       "[MatrixHost Agent] Heartbeat sent.",
