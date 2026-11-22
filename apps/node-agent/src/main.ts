@@ -13,12 +13,15 @@ import type {
 import {
   JobManager,
   JobWebSocketBridge,
-  registerJobHandlers,
 } from "./jobs/index.js";
 
 import {
   initializeDocker,
 } from "./docker/index.js";
+
+import {
+  registerJobHandlers,
+} from "./jobs/register-handlers.js";
 
 async function main(): Promise<void> {
   const config = loadAgentConfig();
@@ -41,10 +44,12 @@ async function main(): Promise<void> {
   }
 
   const httpClient = new AgentHttpClient(config);
-
   const jobManager = new JobManager();
 
-  registerJobHandlers(jobManager);
+  registerJobHandlers(
+    jobManager,
+    docker.runtime,
+  );
 
   let stopped = false;
 
@@ -202,7 +207,6 @@ async function main(): Promise<void> {
     }
 
     await webSocketClient.stop();
-
     await jobManager.stop();
 
     if (activeHeartbeat) {
@@ -231,7 +235,6 @@ async function main(): Promise<void> {
     );
 
     process.exitCode = 1;
-
     void shutdown("uncaughtException");
   });
 
@@ -242,7 +245,6 @@ async function main(): Promise<void> {
     );
 
     process.exitCode = 1;
-
     void shutdown("unhandledRejection");
   });
 
