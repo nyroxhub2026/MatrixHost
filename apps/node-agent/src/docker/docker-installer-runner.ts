@@ -165,13 +165,24 @@ export class DockerInstallerRunner {
       await this.run(["start", installerContainerId], signal);
       await this.run([
         "exec",
+        "--user",
+        "0:0",
         options.targetContainerId,
         "/bin/sh",
         "-lc",
-        "mkdir -p /home/container /var/lib/matrixhost && rm -f /var/lib/matrixhost/install-complete",
+        "mkdir -p /var/lib/matrixhost && rm -f /var/lib/matrixhost/install-complete",
       ], signal);
       await this.run([
         "exec",
+        options.targetContainerId,
+        "/bin/sh",
+        "-lc",
+        "mkdir -p /home/container",
+      ], signal);
+      await this.run([
+        "exec",
+        "--user",
+        "0:0",
         installerContainerId,
         "/bin/sh",
         "-lc",
@@ -182,6 +193,8 @@ export class DockerInstallerRunner {
       const execArgs = [
         "exec",
         "-i",
+        "--user",
+        "0:0",
         "--workdir",
         "/mnt/server",
       ];
@@ -216,6 +229,8 @@ export class DockerInstallerRunner {
 
       await this.run([
         "exec",
+        "--user",
+        "0:0",
         options.targetContainerId,
         "/bin/sh",
         "-lc",
@@ -358,6 +373,8 @@ export class DockerInstallerRunner {
       this.binary,
       [
         "exec",
+        "--user",
+        "0:0",
         installerContainerId,
         "tar",
         "-C",
