@@ -86,20 +86,17 @@ export class JobManager {
     }
 
     const job = parsed.data;
-
     const existing = this.jobs.get(job.id);
 
     if (existing) {
-      if (existing.status === "RUNNING") {
-        const existingPromise = this.runningPromises.get(job.id);
+      const existingPromise = this.runningPromises.get(job.id);
 
-        if (existingPromise) {
-          return {
-            accepted: true,
-            jobId: job.id,
-            result: existingPromise,
-          };
-        }
+      if (existingPromise) {
+        return {
+          accepted: true,
+          jobId: job.id,
+          result: existingPromise,
+        };
       }
 
       if (existing.result) {
@@ -178,7 +175,7 @@ export class JobManager {
   cancel(jobId: string): boolean {
     const controller = this.activeJobs.get(jobId);
 
-    if (!controller) {
+    if (!controller || controller.signal.aborted) {
       return false;
     }
 
