@@ -272,9 +272,9 @@ export async function createServer(
         if (
           !eggScripts.install.container ||
           eggScripts.install.container.length > 255 ||
-          Buffer.byteLength(eggScripts.install.script, "utf8") > 256 * 1024 ||
+          Buffer.byteLength(eggScripts.install.script, "utf8") > 256 * 1024 ||\n          eggScripts.install.script.includes("\\0") ||
           (eggScripts.install.entrypoint !== undefined &&
-            !/^(?:\\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(
+            !/^(?:\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(
               eggScripts.install.entrypoint,
             ))
         ) {
