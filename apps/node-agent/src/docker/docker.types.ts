@@ -23,6 +23,8 @@ export interface DockerContainerSnapshot {
   status: string;
   running: boolean;
   exitCode: number | null;
+  serverId: string | null;
+  managed: boolean;
 }
 
 export interface DockerCreateResult {
