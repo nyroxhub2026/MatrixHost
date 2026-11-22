@@ -7,8 +7,22 @@ export type {
 } from "./docker-client.js";
 
 export { DockerContainerManager } from "./docker-container-manager.js";
-export { DockerContainerDiscovery } from "./docker-container-discovery.js";
+
+export {
+  DockerContainerDiscovery,
+} from "./docker-container-discovery.js";
+
+export type {
+  DockerDiscoveryOptions,
+} from "./docker-container-discovery.js";
+
 export { DockerVolumeManager } from "./docker-volume-manager.js";
+
+export type {
+  DockerVolumeInfo,
+  DockerVolumeManagerOptions,
+} from "./docker-volume-manager.js";
+
 export { DockerServerManager } from "./docker-server-manager.js";
 export { DockerRuntime } from "./docker-runtime.js";
 export { DockerHealthCheck } from "./docker-health-check.js";
@@ -32,10 +46,6 @@ export type {
 export {
   initializeDocker,
 } from "./initialize-docker.js";
-
-export type {
-  DockerVolumeInfo,
-} from "./docker-volume-manager.js";
 
 export type {
   DockerHealthCheckResult,
