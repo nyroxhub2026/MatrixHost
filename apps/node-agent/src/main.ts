@@ -169,6 +169,7 @@ async function main(): Promise<void> {
 
     const hardware = await collectHardwareSnapshot();
     let serverStatuses: AgentServerStatus[] = [];
+    let serverInventoryComplete = false;
 
     if (docker.initialHealth.healthy) {
       try {
@@ -204,6 +205,8 @@ async function main(): Promise<void> {
               : "unknown" as const,
             exitCode: container.exitCode,
           }));
+
+        serverInventoryComplete = true;
       } catch (error) {
         console.warn(
           "[MatrixHost Agent] Container inventory could not be collected:",
@@ -217,6 +220,7 @@ async function main(): Promise<void> {
     await httpClient.sendHeartbeat(
       hardware,
       serverStatuses,
+      serverInventoryComplete,
     );
 
     console.info(
