@@ -82,8 +82,7 @@ export class DockerBackupManager {
     });
 
     const child = spawn(this.dockerBinary, [
-      "exec", "--user", "0:0", containerId,
-      "tar", "-C", "/home/container", "-cf", "-", ".",
+      "cp", "-a", `${containerId}:/home/container/.`, "-",
     ], { shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
 
     let stderr = "";
@@ -157,9 +156,7 @@ export class DockerBackupManager {
     }
 
     const child = spawn(this.dockerBinary, [
-      "exec", "-i", "--user", "0:0", containerId,
-      "tar", "-C", "/home/container", "-xf", "-",
-      "--no-same-owner", "--no-same-permissions",
+      "cp", "-a", "-", `${containerId}:/home/container`,
     ], { shell: false, windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
 
     let stderr = "";
