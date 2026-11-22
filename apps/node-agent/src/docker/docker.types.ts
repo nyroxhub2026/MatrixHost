@@ -15,6 +15,13 @@ export interface DockerResourceLimits {
   pidsLimit: number;
 }
 
+export interface DockerInstallerConfig {
+  image: string;
+  entrypoint?: string;
+  script: string;
+  environment: Record<string, string>;
+}
+
 export interface DockerCreateOptions {
   serverId: string;
   image: string;
@@ -23,6 +30,7 @@ export interface DockerCreateOptions {
   limits: DockerResourceLimits;
   networkName: string;
   ports: DockerPortBinding[];
+  installer?: DockerInstallerConfig;
 }
 
 export interface DockerContainerCreateOptions {
