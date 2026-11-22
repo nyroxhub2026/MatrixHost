@@ -54,7 +54,7 @@ Only configure image prefixes controlled by administrators. An image matching an
 
 Server data currently lives in each container's quota-limited writable layer. The quota is enforced by Docker's storage driver; if Docker cannot apply the requested size, server creation fails rather than running without a disk limit. Images that declare Docker volumes are rejected because volume storage would bypass the writable-layer quota.
 
-Containers retain their writable layer across stop/start/restart. The Agent intentionally does **not** implement server deletion yet: safe deletion requires backup verification, retention policy checks, and a durable recovery path. Do not manually remove MatrixHost server containers if their data is needed.
+Installer output is copied through a bounded tar stream and is checked against the server disk limit. The actual Docker storage-driver quota still must be verified on the target VPS. Containers retain their writable layer across stop/start/restart. The Agent intentionally does **not** implement server deletion yet: safe deletion requires backup verification, retention policy checks, and a durable recovery path. Do not manually remove MatrixHost server containers if their data is needed.
 
 ## Build and checks
 
