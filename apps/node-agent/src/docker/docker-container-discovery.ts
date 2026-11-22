@@ -41,7 +41,7 @@ export class DockerContainerDiscovery {
     }
 
     const container = await this.docker.inspectContainer(
-      ids[0],
+      ids[0]!,
     );
 
     if (
