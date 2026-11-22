@@ -57,7 +57,7 @@ async function buildApp() {
 
   // Security and request infrastructure
   await registerSecurityHeaders(app);
-  await registerCors(app);
+  await registerCors(app, appConfig);
   await registerRateLimit(app);
   registerRequestContext(app);
   registerErrorHandler(app);
