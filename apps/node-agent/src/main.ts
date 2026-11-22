@@ -49,6 +49,7 @@ async function main(): Promise<void> {
   registerJobHandlers(
     jobManager,
     docker.runtime,
+    docker.config.DOCKER_DEFAULT_PIDS_LIMIT,
   );
 
   let stopped = false;
