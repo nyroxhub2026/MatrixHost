@@ -40,6 +40,14 @@ export interface DockerContainerCreateOptions {
   ports: DockerPortBinding[];
 }
 
+export interface DockerNetworkInfo {
+  id: string;
+  name: string;
+  driver: string;
+  serverId: string;
+  managed: boolean;
+}
+
 export interface DockerContainerSnapshot {
   id: string;
   name: string;
