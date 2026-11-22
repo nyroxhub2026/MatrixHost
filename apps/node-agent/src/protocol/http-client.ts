@@ -6,6 +6,21 @@ import type { HardwareSnapshot } from "../resources/hardware.js";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
+export interface AgentServerStatus {
+  serverId: string;
+  containerId: string;
+  status:
+    | "running"
+    | "created"
+    | "exited"
+    | "restarting"
+    | "dead"
+    | "paused"
+    | "removing"
+    | "unknown";
+  exitCode: number | null;
+}
+
 const heartbeatResponseSchema = z.object({
   success: z.literal(true),
   data: z.object({
@@ -61,6 +76,7 @@ export class AgentHttpClient {
 
   async sendHeartbeat(
     hardware: HardwareSnapshot,
+    servers: AgentServerStatus[] = [],
   ): Promise<void> {
     const endpoint = new URL(
       `nodes/${encodeURIComponent(this.config.NODE_ID)}/heartbeat`,
@@ -70,6 +86,7 @@ export class AgentHttpClient {
     const payload = {
       agentVersion: this.config.AGENT_VERSION,
       ...hardware,
+      servers,
     };
 
     let response: Response;
