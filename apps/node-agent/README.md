@@ -47,6 +47,7 @@ Only configure image prefixes controlled by administrators. An image matching an
 - Eggs that require installation scripts are rejected for now. The isolated installer-container runner is not implemented yet; the API will not silently skip an Egg install script or execute it on the host.
 - `START_SERVER`, `STOP_SERVER`, `RESTART_SERVER`, `KILL_SERVER`: verify MatrixHost ownership labels before running the Docker operation.
 - Job acknowledgements are sent before execution begins. Results are cached in memory for reconnect retries while the Agent process remains running.
+- Heartbeats include a bounded inventory of managed containers. The API reconciles server status only when the Agent marks the inventory complete; missing managed containers are marked as errors.
 - Docker CLI calls use argument arrays with shell execution disabled. Customer startup commands are passed as container arguments; they are not executed by a host shell.
 
 ## Storage and deletion behavior
