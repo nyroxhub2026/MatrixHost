@@ -14,6 +14,16 @@ export { DockerVolumeManager } from "./docker-volume-manager.js";
 
 export { DockerServerManager } from "./docker-server-manager.js";
 
+export { DockerRuntime } from "./docker-runtime.js";
+
+export {
+  createDockerRuntime,
+} from "./create-docker-runtime.js";
+
+export type {
+  CreateDockerRuntimeOptions,
+} from "./create-docker-runtime.js";
+
 export type {
   DockerVolumeInfo,
 } from "./docker-volume-manager.js";
