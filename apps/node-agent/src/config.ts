@@ -107,7 +107,16 @@ export type AgentConfig = z.infer<typeof configSchema>;
 export function loadAgentConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): AgentConfig {
-  const parsed = configSchema.safeParse(environment);
+  const parsed = configSchema.safeParse({
+    NODE_ID: environment.NODE_ID,
+    API_BASE_URL: environment.API_BASE_URL,
+    AGENT_TOKEN: environment.AGENT_TOKEN,
+    AGENT_VERSION: environment.AGENT_VERSION,
+    HEARTBEAT_INTERVAL_MS: environment.HEARTBEAT_INTERVAL_MS,
+    RECONNECT_INTERVAL_MS: environment.RECONNECT_INTERVAL_MS,
+    LOG_LEVEL: environment.LOG_LEVEL,
+    NODE_ENV: environment.NODE_ENV,
+  });
 
   if (!parsed.success) {
     throw new Error(
