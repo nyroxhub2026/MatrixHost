@@ -138,12 +138,11 @@ export class DockerBackupManager {
       throw new Error("Invalid backup checksum.");
     }
 
+    const source = this.resolveStoragePath(storagePath);
     const expectedPath = `${serverId}/${backupId}.tar`;
     if (storagePath !== expectedPath) {
       throw new Error("Backup storage path does not match its server and backup identifiers.");
     }
-
-    const source = this.resolveStoragePath(storagePath);
     const metadata = await stat(source);
     if (!metadata.isFile() || metadata.size <= 0 || metadata.size > Math.min(this.maxBackupBytes, maxBytes)) {
       throw new Error("Backup archive is missing or exceeds the configured size limit.");
