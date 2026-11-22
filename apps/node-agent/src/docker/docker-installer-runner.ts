@@ -12,6 +12,7 @@ const MAX_INSTALL_OUTPUT_BYTES = 256 * 1024;
 
 export interface DockerInstallerLimits {
   memoryBytes: number;
+  memorySwapBytes: number;
   cpuPercent: number;
   diskBytes: number;
   pidsLimit: number;
@@ -131,6 +132,8 @@ export class DockerInstallerRunner {
         `matrixhost.server-id=${options.serverId}`,
         "--memory",
         String(options.limits.memoryBytes),
+        "--memory-swap",
+        String(options.limits.memorySwapBytes),
         "--cpus",
         String(options.limits.cpuPercent / 100),
         "--pids-limit",
@@ -281,6 +284,8 @@ export class DockerInstallerRunner {
     if (
       !Number.isSafeInteger(limits.memoryBytes) ||
       limits.memoryBytes <= 0 ||
+      !Number.isSafeInteger(limits.memorySwapBytes) ||
+      limits.memorySwapBytes < limits.memoryBytes ||
       !Number.isFinite(limits.cpuPercent) ||
       limits.cpuPercent <= 0 ||
       limits.cpuPercent > 100_000 ||
