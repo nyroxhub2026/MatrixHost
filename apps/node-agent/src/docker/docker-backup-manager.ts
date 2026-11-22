@@ -96,12 +96,14 @@ export class DockerBackupManager {
     const abort = () => child.kill("SIGKILL");
     signal?.addEventListener("abort", abort, { once: true });
 
+    const childExit = new Promise<number | null>((resolveExit, reject) => {
+      child.once("error", reject);
+      child.once("close", resolveExit);
+    });
+
     try {
       await pipeline(child.stdout, meter, createWriteStream(temporary, { flags: "wx", mode: 0o600 }), { signal });
-      const exitCode = await new Promise<number | null>((resolveExit, reject) => {
-        child.once("error", reject);
-        child.once("close", resolveExit);
-      });
+      const exitCode = await childExit;
       if (signal?.aborted) throw new Error("Backup was cancelled.");
       if (exitCode !== 0) throw new Error(`Docker backup archive failed: ${stderr.trim() || "tar exited unsuccessfully"}`);
       await rename(temporary, destination);
@@ -170,12 +172,14 @@ export class DockerBackupManager {
     const abort = () => child.kill("SIGKILL");
     signal?.addEventListener("abort", abort, { once: true });
 
+    const childExit = new Promise<number | null>((resolveExit, reject) => {
+      child.once("error", reject);
+      child.once("close", resolveExit);
+    });
+
     try {
       await pipeline(createReadStream(source), child.stdin, { signal });
-      const exitCode = await new Promise<number | null>((resolveExit, reject) => {
-        child.once("error", reject);
-        child.once("close", resolveExit);
-      });
+      const exitCode = await childExit;
       if (signal?.aborted) throw new Error("Restore was cancelled.");
       if (exitCode !== 0) throw new Error(`Docker restore archive failed: ${stderr.trim() || "tar exited unsuccessfully"}`);
       return { restored: true, checksum: actualChecksum, sizeBytes: metadata.size };
