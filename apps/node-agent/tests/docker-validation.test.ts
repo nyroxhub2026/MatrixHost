@@ -18,8 +18,15 @@ const validOptions = {
     diskBytes: 5 * 1024 * 1024 * 1024,
     pidsLimit: 256,
   },
-  networkName: "matrixhost-network",
-  volumeName: "matrixhost-server-a1f4c0b2",
+  networkName: "matrixhost-server-a1f4c0b2",
+  ports: [
+    {
+      hostIp: "0.0.0.0",
+      hostPort: 25565,
+      containerPort: 25565,
+      protocol: "tcp" as const,
+    },
+  ],
 };
 
 test("accepts a valid container specification", () => {
