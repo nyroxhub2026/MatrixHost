@@ -2,11 +2,11 @@ export { DockerClient } from "./docker-client.js";
 
 export type {
   DockerContainerOperation,
-  DockerContainerSnapshot,
-  DockerCreateOptions,
 } from "./docker-client.js";
 
-export { DockerContainerManager } from "./docker-container-manager.js";
+export {
+  DockerContainerManager,
+} from "./docker-container-manager.js";
 
 export {
   DockerContainerDiscovery,
@@ -15,6 +15,14 @@ export {
 export type {
   DockerDiscoveryOptions,
 } from "./docker-container-discovery.js";
+
+export {
+  DockerNetworkManager,
+} from "./docker-network-manager.js";
+
+export type {
+  DockerNetworkManagerOptions,
+} from "./docker-network-manager.js";
 
 export { DockerVolumeManager } from "./docker-volume-manager.js";
 
@@ -53,7 +61,13 @@ export type {
 
 export type {
   DockerCommandResult,
+  DockerContainerCreateOptions,
+  DockerContainerSnapshot,
+  DockerCreateOptions,
   DockerCreateResult,
+  DockerNetworkInfo,
+  DockerPortBinding,
+  DockerPortProtocol,
   DockerResourceLimits,
 } from "./docker.types.js";
 
