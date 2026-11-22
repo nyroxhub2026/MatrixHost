@@ -353,18 +353,6 @@ export async function createServer(
         );
       }
 
-      const startup = buildStartupCommand(
-        egg.startupCommand,
-        resolvedVariables.environment,
-      );
-
-      if (!startup.success) {
-        throw AppError.badRequest(
-          "Egg startup command could not be resolved.",
-          startup.errors,
-        );
-      }
-
       // Multiple allocations are not implemented yet.
       if (input.resources.allocations !== 1) {
         throw AppError.conflict(
@@ -396,6 +384,26 @@ export async function createServer(
         );
       }
 
+      // These values are controlled by the selected primary allocation,
+      // not by customer-supplied Egg variables.
+      const finalEnvironment = {
+        ...resolvedVariables.environment,
+        SERVER_IP: allocation.ipAddress,
+        SERVER_PORT: String(allocation.port),
+      };
+
+      const startup = buildStartupCommand(
+        egg.startupCommand,
+        finalEnvironment,
+      );
+
+      if (!startup.success) {
+        throw AppError.badRequest(
+          "Egg startup command could not be resolved.",
+          startup.errors,
+        );
+      }
+
       const server = await tx.server.create({
         data: {
           name: input.name,
@@ -420,7 +428,7 @@ export async function createServer(
           allocationLimit: input.resources.allocations,
           backupLimit: input.resources.backups,
 
-          environment: resolvedVariables.environment,
+          environment: finalEnvironment,
         },
       });
 
