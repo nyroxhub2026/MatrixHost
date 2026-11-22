@@ -78,7 +78,7 @@ export class DockerInstallerRunner {
       targetContainerId,
       "/bin/sh",
       "-lc",
-      "cat /home/container/.matrixhost-install-complete 2>/dev/null || true",
+      "cat /var/lib/matrixhost/install-complete 2>/dev/null || true",
     ]);
 
     return result.stdout.trim() === installHash;
@@ -165,7 +165,7 @@ export class DockerInstallerRunner {
         options.targetContainerId,
         "/bin/sh",
         "-lc",
-        "mkdir -p /home/container && rm -f /home/container/.matrixhost-install-complete",
+        "mkdir -p /home/container /var/lib/matrixhost && rm -f /var/lib/matrixhost/install-complete",
       ], signal);
       await this.run([
         "exec",
@@ -216,7 +216,7 @@ export class DockerInstallerRunner {
         options.targetContainerId,
         "/bin/sh",
         "-lc",
-        `printf '%s' '${installHash}' > /home/container/.matrixhost-install-complete`,
+        `printf '%s' '${installHash}' > /var/lib/matrixhost/install-complete`,
       ], signal);
 
       return { installHash };
