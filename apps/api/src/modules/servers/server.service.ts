@@ -11,6 +11,36 @@ import type {
 
 const MB = 1024 * 1024;
 
+const eggScriptsSchema = z
+  .object({
+    privileged: z.boolean().optional(),
+    install: z
+      .object({
+        container: z.string().optional(),
+        entrypoint: z.string().optional(),
+        script: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+function parseEggScripts(value: Prisma.JsonValue) {
+  if (value === null) {
+    return {};
+  }
+
+  const parsed = eggScriptsSchema.safeParse(value);
+
+  if (!parsed.success) {
+    throw AppError.badRequest(
+      "Egg installer configuration is invalid.",
+    );
+  }
+
+  return parsed.data;
+}
+
 const eggVariableSchema = z
   .object({
     name: z.string().optional(),
@@ -230,13 +260,15 @@ export async function createServer(
         );
       }
 
-      if (egg.scripts?.privileged === true) {
+      const eggScripts = parseEggScripts(egg.scripts);
+
+      if (eggScripts.privileged === true) {
         throw AppError.forbidden(
           "Privileged Egg installation scripts are not permitted."
         );
       }
 
-      if (egg.scripts?.install?.script?.trim()) {
+      if (eggScripts.install?.script?.trim()) {
         throw AppError.conflict(
           "This Egg requires an installer script. Isolated installer execution must be enabled before this Egg can be provisioned."
         );
