@@ -191,6 +191,29 @@ async function failInvalidJob(
           status: "ERROR",
         },
       });
+
+      await transaction.nodeResourceReservation.updateMany({
+        where: {
+          serverId,
+          nodeId,
+          status: "ACTIVE",
+        },
+        data: {
+          status: "RELEASED",
+          releasedAt: now,
+        },
+      });
+
+      await transaction.allocation.updateMany({
+        where: {
+          serverId,
+          nodeId,
+        },
+        data: {
+          serverId: null,
+          isPrimary: false,
+        },
+      });
     }
   });
 }
