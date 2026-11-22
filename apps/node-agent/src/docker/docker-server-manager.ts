@@ -1,6 +1,6 @@
 import { DockerClient } from "./docker-client.js";
-import { DockerVolumeManager } from "./docker-volume-manager.js";
 import { DockerContainerDiscovery } from "./docker-container-discovery.js";
+import { DockerNetworkManager } from "./docker-network-manager.js";
 import { validateDockerCreateOptions } from "./docker-validation.js";
 
 import type { DockerCreateOptions } from "./docker.types.js";
@@ -8,7 +8,7 @@ import type { DockerCreateOptions } from "./docker.types.js";
 export class DockerServerManager {
   constructor(
     private readonly docker: DockerClient,
-    private readonly volumes: DockerVolumeManager,
+    private readonly networks: DockerNetworkManager,
     private readonly discovery: DockerContainerDiscovery,
   ) {}
 
@@ -17,7 +17,7 @@ export class DockerServerManager {
   ): Promise<{
     serverId: string;
     containerId: string;
-    volumeName: string;
+    networkName: string;
   }> {
     validateDockerCreateOptions(options);
 
@@ -31,18 +31,18 @@ export class DockerServerManager {
       );
     }
 
-    const existingVolume = await this.volumes.find(
-      options.volumeName,
+    const existingNetwork = await this.networks.find(
+      options.networkName,
     );
 
-    if (existingVolume) {
+    if (existingNetwork) {
       throw new Error(
-        "A Docker volume already exists with this name.",
+        "A Docker network already exists for this server.",
       );
     }
 
-    await this.volumes.create(
-      options.volumeName,
+    await this.networks.create(
+      options.networkName,
       options.serverId,
     );
 
@@ -51,28 +51,50 @@ export class DockerServerManager {
         serverId: options.serverId,
         image: options.image,
         name: `matrixhost-${options.serverId}`,
+        startupCommand: options.startupCommand,
         environment: options.environment,
         memoryBytes: options.limits.memoryBytes,
         memorySwapBytes: options.limits.memorySwapBytes,
         cpuPercent: options.limits.cpuPercent,
+        diskBytes: options.limits.diskBytes,
         pidsLimit: options.limits.pidsLimit,
-        volumeName: options.volumeName,
+        networkName: options.networkName,
+        ports: options.ports,
       });
 
       return {
         serverId: options.serverId,
         containerId,
-        volumeName: options.volumeName,
+        networkName: options.networkName,
       };
     } catch (creationError) {
+      let discoveredContainer = null;
+
       try {
-        await this.volumes.remove(
-          options.volumeName,
+        discoveredContainer =
+          await this.discovery.findByServerId(options.serverId);
+      } catch {
+        throw new Error(
+          "Container creation could not be confirmed. The network was retained for safe manual reconciliation.",
+          { cause: creationError },
+        );
+      }
+
+      if (discoveredContainer) {
+        throw new Error(
+          "The container exists but its creation response was invalid. The network was retained.",
+          { cause: creationError },
+        );
+      }
+
+      try {
+        await this.networks.remove(
+          options.networkName,
           options.serverId,
         );
       } catch {
         throw new Error(
-          "Container creation failed and volume cleanup also failed. Manual inspection is required.",
+          "Container creation failed and network cleanup also failed. Manual inspection is required.",
           { cause: creationError },
         );
       }
