@@ -5,12 +5,15 @@ import { loadAgentConfig } from "../config.js";
 import {
   agentIncomingMessageSchema,
   type AgentIncomingMessage,
+  type AgentOutgoingMessage,
 } from "./message-schemas.js";
 
 type AgentConfig = ReturnType<typeof loadAgentConfig>;
 
 export interface WebSocketClientOptions {
-  onMessage: (message: AgentIncomingMessage) => void | Promise<void>;
+  onMessage: (
+    message: AgentIncomingMessage,
+  ) => void | Promise<void>;
   onConnected?: () => void;
   onDisconnected?: () => void;
   onError?: (error: Error) => void;
@@ -146,7 +149,7 @@ export class AgentWebSocketClient {
     }
   }
 
-  send(message: unknown): boolean {
+  send(message: AgentOutgoingMessage): boolean {
     const socket = this.socket;
 
     if (
