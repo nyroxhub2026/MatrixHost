@@ -6,6 +6,8 @@ import {
   AgentWebSocketClient,
 } from "./protocol/index.js";
 
+import type { AgentServerStatus } from "./protocol/index.js";
+
 import type {
   AgentIncomingMessage,
 } from "./protocol/message-schemas.js";
@@ -166,7 +168,7 @@ async function main(): Promise<void> {
     }
 
     const hardware = await collectHardwareSnapshot();
-    let serverStatuses = [];
+    let serverStatuses: AgentServerStatus[] = [];
 
     if (docker.initialHealth.healthy) {
       try {
