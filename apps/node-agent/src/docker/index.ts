@@ -7,13 +7,9 @@ export type {
 } from "./docker-client.js";
 
 export { DockerContainerManager } from "./docker-container-manager.js";
-
 export { DockerContainerDiscovery } from "./docker-container-discovery.js";
-
 export { DockerVolumeManager } from "./docker-volume-manager.js";
-
 export { DockerServerManager } from "./docker-server-manager.js";
-
 export { DockerRuntime } from "./docker-runtime.js";
 
 export {
@@ -23,6 +19,14 @@ export {
 export type {
   CreateDockerRuntimeOptions,
 } from "./create-docker-runtime.js";
+
+export {
+  loadDockerConfig,
+} from "./docker.config.js";
+
+export type {
+  DockerConfig,
+} from "./docker.config.js";
 
 export type {
   DockerVolumeInfo,
