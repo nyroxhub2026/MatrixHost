@@ -21,6 +21,7 @@ export interface WebSocketClientOptions {
 
 export class AgentWebSocketClient {
   private socket: WebSocket | undefined;
+
   private reconnectTimer:
     | ReturnType<typeof setTimeout>
     | undefined;
@@ -28,6 +29,8 @@ export class AgentWebSocketClient {
   private reconnectDelay = 1_000;
   private stopped = true;
   private connecting = false;
+  private generation = 0;
+  private messageQueue: Promise<void> = Promise.resolve();
 
   private readonly config: AgentConfig;
   private readonly options: WebSocketClientOptions;
@@ -59,56 +62,113 @@ export class AgentWebSocketClient {
     }
 
     this.connecting = true;
+    const generation = ++this.generation;
 
-    const url = new URL(
-      `nodes/${this.config.NODE_ID}/agent/ws`,
-      this.config.API_BASE_URL.endsWith("/")
-        ? this.config.API_BASE_URL
-        : `${this.config.API_BASE_URL}/`,
-    );
+    try {
+      const url = new URL(
+        `nodes/${this.config.NODE_ID}/agent/ws`,
+        this.config.API_BASE_URL.endsWith("/")
+          ? this.config.API_BASE_URL
+          : `${this.config.API_BASE_URL}/`,
+      );
 
-    url.protocol =
-      url.protocol === "https:" ? "wss:" : "ws:";
-
-    const socket = new WebSocket(url, {
-      headers: {
-        Authorization: `Bearer ${this.config.AGENT_TOKEN}`,
-      },
-      handshakeTimeout: 10_000,
-      maxPayload: 64 * 1024,
-      perMessageDeflate: false,
-    });
-
-    this.socket = socket;
-
-    socket.on("open", () => {
-      this.connecting = false;
-      this.reconnectDelay = 1_000;
-      this.options.onConnected?.();
-    });
-
-    socket.on("message", (data: RawData) => {
-      void this.handleMessage(data);
-    });
-
-    socket.on("error", (error) => {
-      this.options.onError?.(error);
-    });
-
-    socket.on("close", () => {
-      this.socket = undefined;
-      this.connecting = false;
-
-      if (this.stopped) {
-        return;
+      if (
+        url.protocol !== "http:" &&
+        url.protocol !== "https:"
+      ) {
+        throw new Error("Unsupported API URL protocol.");
       }
 
-      this.options.onDisconnected?.();
+      url.protocol =
+        url.protocol === "https:" ? "wss:" : "ws:";
+
+      const socket = new WebSocket(url, {
+        headers: {
+          Authorization: `Bearer ${this.config.AGENT_TOKEN}`,
+        },
+        handshakeTimeout: 10_000,
+        maxPayload: 64 * 1024,
+        perMessageDeflate: false,
+      });
+
+      this.socket = socket;
+
+      socket.on("open", () => {
+        if (
+          this.stopped ||
+          generation !== this.generation
+        ) {
+          socket.close(1000, "Connection superseded.");
+          return;
+        }
+
+        this.connecting = false;
+        this.reconnectDelay = 1_000;
+        this.options.onConnected?.();
+      });
+
+      socket.on("message", (data: RawData) => {
+        if (
+          this.stopped ||
+          generation !== this.generation
+        ) {
+          return;
+        }
+
+        this.messageQueue = this.messageQueue
+          .then(() => this.handleMessage(data, socket))
+          .catch((error) => {
+            this.options.onError?.(
+              error instanceof Error
+                ? error
+                : new Error("Message processing failed."),
+            );
+          });
+      });
+
+      socket.on("error", (error) => {
+        this.options.onError?.(error);
+      });
+
+      socket.on("close", () => {
+        if (generation !== this.generation) {
+          return;
+        }
+
+        this.socket = undefined;
+        this.connecting = false;
+
+        if (this.stopped) {
+          return;
+        }
+
+        this.options.onDisconnected?.();
+        this.scheduleReconnect();
+      });
+    } catch (error) {
+      this.connecting = false;
+
+      this.options.onError?.(
+        error instanceof Error
+          ? error
+          : new Error("WebSocket connection failed."),
+      );
+
       this.scheduleReconnect();
-    });
+    }
   }
 
-  private async handleMessage(data: RawData): Promise<void> {
+  private async handleMessage(
+    data: RawData,
+    socket: WebSocket,
+  ): Promise<void> {
+    if (
+      this.stopped ||
+      socket !== this.socket
+    ) {
+      return;
+    }
+
     let parsedJson: unknown;
 
     try {
@@ -118,7 +178,7 @@ export class AgentWebSocketClient {
         new Error("API sent invalid JSON."),
       );
 
-      this.socket?.close(1008, "Invalid JSON.");
+      socket.close(1008, "Invalid JSON.");
       return;
     }
 
@@ -130,7 +190,7 @@ export class AgentWebSocketClient {
         new Error("API sent an invalid protocol message."),
       );
 
-      this.socket?.close(
+      socket.close(
         1008,
         "Invalid protocol message.",
       );
@@ -159,13 +219,26 @@ export class AgentWebSocketClient {
       return false;
     }
 
-    socket.send(JSON.stringify(message), (error) => {
-      if (error) {
-        this.options.onError?.(error);
-      }
-    });
+    try {
+      socket.send(
+        JSON.stringify(message),
+        (error) => {
+          if (error) {
+            this.options.onError?.(error);
+          }
+        },
+      );
 
-    return true;
+      return true;
+    } catch (error) {
+      this.options.onError?.(
+        error instanceof Error
+          ? error
+          : new Error("WebSocket send failed."),
+      );
+
+      return false;
+    }
   }
 
   private scheduleReconnect(): void {
@@ -194,7 +267,12 @@ export class AgentWebSocketClient {
   }
 
   async stop(): Promise<void> {
+    if (this.stopped) {
+      return;
+    }
+
     this.stopped = true;
+    this.generation++;
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
