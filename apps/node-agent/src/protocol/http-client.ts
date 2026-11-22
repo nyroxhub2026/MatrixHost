@@ -77,6 +77,7 @@ export class AgentHttpClient {
   async sendHeartbeat(
     hardware: HardwareSnapshot,
     servers: AgentServerStatus[] = [],
+    serverInventoryComplete = false,
   ): Promise<void> {
     const endpoint = new URL(
       `nodes/${encodeURIComponent(this.config.NODE_ID)}/heartbeat`,
@@ -87,6 +88,7 @@ export class AgentHttpClient {
       agentVersion: this.config.AGENT_VERSION,
       ...hardware,
       servers,
+      serverInventoryComplete,
     };
 
     let response: Response;
