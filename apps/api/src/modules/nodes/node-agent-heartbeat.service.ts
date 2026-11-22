@@ -98,6 +98,48 @@ export async function updateNodeHeartbeat(
           },
         });
       }
+
+      if (input.serverInventoryComplete) {
+        const knownServers = await transaction.server.findMany({
+          where: {
+            nodeId,
+            containerId: {
+              not: null,
+            },
+            status: {
+              notIn: ["INSTALLING", "SUSPENDED", "ERROR"],
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        const reportedServerIds = new Set(
+          input.servers.map((server) => server.serverId),
+        );
+
+        const missingServerIds = knownServers
+          .filter((server) => !reportedServerIds.has(server.id))
+          .map((server) => server.id);
+
+        if (missingServerIds.length > 0) {
+          await transaction.server.updateMany({
+            where: {
+              id: {
+                in: missingServerIds,
+              },
+              nodeId,
+              status: {
+                notIn: ["INSTALLING", "SUSPENDED", "ERROR"],
+              },
+            },
+            data: {
+              status: "ERROR",
+            },
+          });
+        }
+      }
     }
 
     return updatedNode;
