@@ -1,4 +1,10 @@
 import { execFile } from "node:child_process";
+import { isIP } from "node:net";
+
+import type {
+  DockerContainerCreateOptions,
+  DockerContainerSnapshot,
+} from "./docker.types.js";
 
 const CONTAINER_ID_PATTERN =
   /^[a-f0-9]{12,64}$/i;
@@ -23,49 +29,14 @@ export interface DockerClientOptions {
   timeoutMs?: number;
   maxBufferBytes?: number;
   managedLabel?: string;
-}
-
-export interface DockerContainerSnapshot {
-  id: string;
-  name: string;
-  image: string;
-  status: string;
-  running: boolean;
-  exitCode: number | null;
-  serverId: string | null;
-  managed: boolean;
-}
-
-interface DockerInspectOutput {
-  Id?: unknown;
-  Name?: unknown;
-  Config?: {
-    Image?: unknown;
-    Labels?: unknown;
-  };
-  State?: {
-    Status?: unknown;
-    Running?: unknown;
-    ExitCode?: unknown;
-  };
-}
-
-export interface DockerCreateOptions {
-  serverId: string;
-  image: string;
-  name: string;
-  environment: Record<string, string>;
-  memoryBytes: number;
-  memorySwapBytes: number;
-  cpuPercent: number;
-  pidsLimit: number;
-  volumeName: string;
+  allowedImagePrefixes?: string[];
 }
 
 export class DockerClient {
   private readonly timeoutMs: number;
   private readonly maxBufferBytes: number;
   private readonly managedLabel: string;
+  private readonly allowedImagePrefixes: string[];
 
   constructor(
     private readonly binary = "docker",
@@ -77,6 +48,8 @@ export class DockerClient {
 
     this.managedLabel =
       options.managedLabel ?? "matrixhost.managed";
+    this.allowedImagePrefixes =
+      options.allowedImagePrefixes ?? [];
 
     if (
       !Number.isInteger(this.timeoutMs) ||
@@ -87,6 +60,11 @@ export class DockerClient {
       this.maxBufferBytes > 16 * 1024 * 1024 ||
       !/^[a-zA-Z0-9_.-]{1,128}$/.test(
         this.managedLabel,
+      ) ||
+      this.allowedImagePrefixes.length > 50 ||
+      this.allowedImagePrefixes.some(
+        (prefix) =>
+          !/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/.test(prefix),
       )
     ) {
       throw new Error("Invalid Docker client configuration.");
@@ -208,7 +186,7 @@ export class DockerClient {
   }
 
   async createContainer(
-    options: DockerCreateOptions,
+    options: DockerContainerCreateOptions,
   ): Promise<string> {
     if (!SERVER_ID_PATTERN.test(options.serverId)) {
       throw new Error("Invalid server ID.");
@@ -216,8 +194,11 @@ export class DockerClient {
 
     if (
       !RESOURCE_NAME_PATTERN.test(options.name) ||
-      !RESOURCE_NAME_PATTERN.test(options.volumeName) ||
-      !IMAGE_PATTERN.test(options.image)
+      !RESOURCE_NAME_PATTERN.test(options.networkName) ||
+      !IMAGE_PATTERN.test(options.image) ||
+      !this.allowedImagePrefixes.some((prefix) =>
+        options.image.startsWith(prefix),
+      )
     ) {
       throw new Error(
         "Invalid Docker container configuration.",
@@ -232,6 +213,8 @@ export class DockerClient {
       !Number.isSafeInteger(options.cpuPercent) ||
       options.cpuPercent <= 0 ||
       options.cpuPercent > 100_000 ||
+      !Number.isSafeInteger(options.diskBytes) ||
+      options.diskBytes <= 0 ||
       !Number.isSafeInteger(options.pidsLimit) ||
       options.pidsLimit <= 0 ||
       options.pidsLimit > 100_000
@@ -272,21 +255,51 @@ export class DockerClient {
       "--pids-limit",
       String(options.pidsLimit),
 
+      "--storage-opt",
+      `size=${options.diskBytes}B`,
+
       "--cap-drop",
       "ALL",
 
       "--security-opt",
       "no-new-privileges:true",
 
-      "--network",
-      "none",
+      "--init",
 
-      "--mount",
-      `type=volume,source=${options.volumeName},target=/home/container`,
+      "--network",
+      options.networkName,
 
       "--restart",
       "no",
+
+      "--entrypoint",
+      "/bin/sh",
     ];
+
+    for (const port of options.ports) {
+      if (
+        isIP(port.hostIp) === 0 ||
+        !Number.isInteger(port.hostPort) ||
+        port.hostPort < 1 ||
+        port.hostPort > 65535 ||
+        !Number.isInteger(port.containerPort) ||
+        port.containerPort < 1 ||
+        port.containerPort > 65535 ||
+        (port.protocol !== "tcp" && port.protocol !== "udp")
+      ) {
+        throw new Error("Invalid Docker port binding.");
+      }
+
+      const hostIp =
+        isIP(port.hostIp) === 6
+          ? `[${port.hostIp}]`
+          : port.hostIp;
+
+      args.push(
+        "--publish",
+        `${hostIp}:${port.hostPort}:${port.containerPort}/${port.protocol}`,
+      );
+    }
 
     for (const [key, value] of entries) {
       if (
@@ -303,7 +316,11 @@ export class DockerClient {
       args.push("--env", `${key}=${value}`);
     }
 
-    args.push(options.image);
+    args.push(
+      options.image,
+      "-lc",
+      options.startupCommand,
+    );
 
     const result = await this.run(args);
     const containerId = result.stdout.trim();
