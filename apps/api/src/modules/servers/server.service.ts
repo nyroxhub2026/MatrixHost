@@ -327,6 +327,20 @@ export async function createServer(
 
       const image = getDockerImage(egg.dockerImages);
       const eggVariables = parseEggVariables(egg.variables);
+      const allowedEnvironmentKeys = new Set(
+        eggVariables.map((variable) => variable.env_variable),
+      );
+      const unknownEnvironmentKeys = Object.keys(
+        input.environment,
+      ).filter((key) => !allowedEnvironmentKeys.has(key));
+
+      if (unknownEnvironmentKeys.length > 0) {
+        throw AppError.badRequest(
+          "Environment contains variables that are not defined by the selected Egg.",
+          unknownEnvironmentKeys,
+        );
+      }
+
       const resolvedVariables = resolveEggVariables(
         eggVariables,
         input.environment,
