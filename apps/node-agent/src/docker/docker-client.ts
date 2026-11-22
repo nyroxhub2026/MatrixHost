@@ -380,19 +380,6 @@ export class DockerClient {
     ];
 
     for (const port of options.ports) {
-      if (
-        isIP(port.hostIp) === 0 ||
-        !Number.isInteger(port.hostPort) ||
-        port.hostPort < 1 ||
-        port.hostPort > 65535 ||
-        !Number.isInteger(port.containerPort) ||
-        port.containerPort < 1 ||
-        port.containerPort > 65535 ||
-        (port.protocol !== "tcp" && port.protocol !== "udp")
-      ) {
-        throw new Error("Invalid Docker port binding.");
-      }
-
       const hostIp =
         isIP(port.hostIp) === 6
           ? `[${port.hostIp}]`
