@@ -1,4 +1,5 @@
 import { loadAgentConfig } from "./config.js";
+import { createLogger } from "./logger.js";
 import { collectHardwareSnapshot } from "./resources/hardware.js";
 
 import {
@@ -27,20 +28,21 @@ import {
 
 async function main(): Promise<void> {
   const config = loadAgentConfig();
+  const logger = createLogger(config.LOG_LEVEL);
 
-  console.info(
+  logger.info(
     "[MatrixHost Agent] Initializing Docker runtime...",
   );
 
   const docker = await initializeDocker();
 
   if (docker.initialHealth.healthy) {
-    console.info(
+    logger.info(
       "[MatrixHost Agent] Docker is available:",
       docker.initialHealth.dockerVersion,
     );
   } else {
-    console.warn(
+    logger.warn(
       "[MatrixHost Agent] Docker is unavailable.",
     );
   }
@@ -66,19 +68,19 @@ async function main(): Promise<void> {
     config,
     {
       onConnected: () => {
-        console.info(
+        logger.info(
           "[MatrixHost Agent] WebSocket connected.",
         );
       },
 
       onDisconnected: () => {
-        console.warn(
+        logger.warn(
           "[MatrixHost Agent] WebSocket disconnected.",
         );
       },
 
       onError: (error) => {
-        console.error(
+        logger.error(
           "[MatrixHost Agent] WebSocket error:",
           error.message,
         );
@@ -109,7 +111,7 @@ async function main(): Promise<void> {
           );
         }
 
-        console.info(
+        logger.info(
           "[MatrixHost Agent] Authenticated with MatrixHost API.",
         );
 
@@ -126,7 +128,7 @@ async function main(): Promise<void> {
       }
 
       case "pong": {
-        console.debug(
+        logger.debug(
           "[MatrixHost Agent] Pong received.",
         );
 
@@ -134,14 +136,14 @@ async function main(): Promise<void> {
       }
 
       case "job": {
-        console.info(
+        logger.info(
           "[MatrixHost Agent] Job received:",
           message.job.id,
           message.job.type,
         );
 
         void jobBridge.handleMessage(message).catch((error) => {
-          console.error(
+          logger.error(
             "[MatrixHost Agent] Job bridge failed:",
             error instanceof Error
               ? error.message
@@ -208,7 +210,7 @@ async function main(): Promise<void> {
 
         serverInventoryComplete = true;
       } catch (error) {
-        console.warn(
+        logger.warn(
           "[MatrixHost Agent] Container inventory could not be collected:",
           error instanceof Error
             ? error.message
@@ -223,7 +225,7 @@ async function main(): Promise<void> {
       serverInventoryComplete,
     );
 
-    console.info(
+    logger.info(
       "[MatrixHost Agent] Heartbeat sent.",
     );
   }
@@ -236,7 +238,7 @@ async function main(): Promise<void> {
     heartbeatTimer = setTimeout(() => {
       activeHeartbeat = sendHeartbeat()
         .catch((error) => {
-          console.error(
+          logger.error(
             "[MatrixHost Agent] Heartbeat failed:",
             error instanceof Error
               ? error.message
@@ -259,7 +261,7 @@ async function main(): Promise<void> {
 
     stopped = true;
 
-    console.info(
+    logger.info(
       `[MatrixHost Agent] Shutting down (${signal}).`,
     );
 
@@ -276,7 +278,7 @@ async function main(): Promise<void> {
 
     for (const task of shutdownTasks) {
       if (task.status === "rejected") {
-        console.error(
+        logger.error(
           "[MatrixHost Agent] Shutdown task failed:",
           task.reason instanceof Error
             ? task.reason.message
@@ -288,7 +290,7 @@ async function main(): Promise<void> {
     try {
       await docker.runtime.shutdown();
     } catch (error) {
-      console.error(
+      logger.error(
         "[MatrixHost Agent] Docker runtime shutdown failed:",
         error instanceof Error
           ? error.message
@@ -296,7 +298,7 @@ async function main(): Promise<void> {
       );
     }
 
-    console.info(
+    logger.info(
       "[MatrixHost Agent] Shutdown complete.",
     );
   }
@@ -310,7 +312,7 @@ async function main(): Promise<void> {
   });
 
   process.on("uncaughtException", (error) => {
-    console.error(
+    logger.error(
       "[MatrixHost Agent] Uncaught exception:",
       error,
     );
@@ -320,7 +322,7 @@ async function main(): Promise<void> {
   });
 
   process.on("unhandledRejection", (reason) => {
-    console.error(
+    logger.error(
       "[MatrixHost Agent] Unhandled rejection:",
       reason,
     );
@@ -334,7 +336,7 @@ async function main(): Promise<void> {
   try {
     await sendHeartbeat();
   } catch (error) {
-    console.error(
+    logger.error(
       "[MatrixHost Agent] Initial heartbeat failed:",
       error instanceof Error
         ? error.message
@@ -344,7 +346,7 @@ async function main(): Promise<void> {
 
   scheduleHeartbeat();
 
-  console.info(
+  logger.info(
     "[MatrixHost Agent] Started.",
   );
 }
