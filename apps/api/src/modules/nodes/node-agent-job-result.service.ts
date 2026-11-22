@@ -155,6 +155,12 @@ export async function completeNodeJob(
         typeof backupSize === "number" &&
         Number.isSafeInteger(backupSize) &&
         backupSize > 0);
+    const restoreBackup = job.type === "RESTORE_BACKUP" && backupId && job.serverId
+      ? await transaction.backup.findFirst({
+          where: { id: backupId, serverId: job.serverId, status: "RESTORING" },
+          select: { checksum: true },
+        })
+      : null;
     const validRestoreBackupResult =
       job.type !== "RESTORE_BACKUP" ||
       !input.success ||
@@ -162,7 +168,8 @@ export async function completeNodeJob(
         input.result?.backupId === backupId &&
         input.result?.restored === true &&
         backupChecksum !== undefined &&
-        /^[a-f0-9]{64}$/i.test(backupChecksum));
+        /^[a-f0-9]{64}$/i.test(backupChecksum) &&
+        restoreBackup?.checksum === backupChecksum);
     const validCreateResult =
       (job.type !== "CREATE_SERVER" ||
         !input.success ||
