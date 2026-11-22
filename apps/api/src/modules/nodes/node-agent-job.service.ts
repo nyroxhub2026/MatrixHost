@@ -164,6 +164,7 @@ async function buildJobPayload(
       if (typeof script === "string" && script.trim().length > 0) {
         if (
           Buffer.byteLength(script, "utf8") > 256 * 1024 ||
+          script.includes("\\0") ||
           typeof image !== "string" ||
           image.length === 0 ||
           image.length > 255 ||
