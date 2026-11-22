@@ -45,6 +45,15 @@ export const createServerJobPayloadSchema = z
     environment: environmentSchema,
     limits: resourceLimitsSchema,
     ports: z.array(portBindingSchema).min(1).max(100),
+    install: z
+      .object({
+        image: z.string().min(1).max(255),
+        entrypoint: z.string().min(1).max(200).optional(),
+        script: z.string().min(1).max(256 * 1024),
+        environment: environmentSchema,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
