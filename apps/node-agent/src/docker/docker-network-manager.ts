@@ -179,6 +179,7 @@ export class DockerNetworkManager {
   async remove(
     networkName: string,
     expectedServerId: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     this.validate(networkName, expectedServerId);
 
