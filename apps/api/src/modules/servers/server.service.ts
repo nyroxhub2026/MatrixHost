@@ -1,4 +1,6 @@
 import { Prisma } from "@prisma/client";
+import { buildStartupCommand, resolveEggVariables } from "@matrixhost/egg-engine";
+import { z } from "zod";
 
 import { prisma } from "@matrixhost/database";
 import { AppError } from "@matrixhost/shared";
@@ -8,6 +10,35 @@ import type {
 } from "./server.schemas.js";
 
 const MB = 1024 * 1024;
+
+const eggVariableSchema = z
+  .object({
+    name: z.string().optional(),
+    description: z.string().optional(),
+    env_variable: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
+    default_value: z
+      .union([z.string(), z.number(), z.boolean(), z.null()])
+      .optional(),
+    user_viewable: z.boolean().optional(),
+    user_editable: z.boolean().optional(),
+    rules: z.string().optional(),
+    field_type: z.string().optional(),
+  })
+  .passthrough();
+
+function parseEggVariables(
+  value: Prisma.JsonValue,
+) {
+  const parsed = z.array(eggVariableSchema).safeParse(value);
+
+  if (!parsed.success) {
+    throw AppError.badRequest(
+      "Egg variables configuration is invalid.",
+    );
+  }
+
+  return parsed.data;
+}
 
 function toBytes(valueMb: number): bigint {
   if (!Number.isFinite(valueMb) || valueMb < 0) {
@@ -295,6 +326,30 @@ export async function createServer(
       );
 
       const image = getDockerImage(egg.dockerImages);
+      const eggVariables = parseEggVariables(egg.variables);
+      const resolvedVariables = resolveEggVariables(
+        eggVariables,
+        input.environment,
+      );
+
+      if (!resolvedVariables.success) {
+        throw AppError.badRequest(
+          "Invalid Egg environment variables.",
+          resolvedVariables.errors,
+        );
+      }
+
+      const startup = buildStartupCommand(
+        egg.startupCommand,
+        resolvedVariables.environment,
+      );
+
+      if (!startup.success) {
+        throw AppError.badRequest(
+          "Egg startup command could not be resolved.",
+          startup.errors,
+        );
+      }
 
       // Multiple allocations are not implemented yet.
       if (input.resources.allocations !== 1) {
@@ -339,7 +394,7 @@ export async function createServer(
           status: "INSTALLING",
 
           dockerImage: image,
-          startupCommand: egg.startupCommand,
+          startupCommand: startup.command,
 
           memoryLimitBytes: memoryBytes,
           swapLimitBytes: swapBytes,
@@ -351,7 +406,7 @@ export async function createServer(
           allocationLimit: input.resources.allocations,
           backupLimit: input.resources.backups,
 
-          environment: input.environment,
+          environment: resolvedVariables.environment,
         },
       });
 
