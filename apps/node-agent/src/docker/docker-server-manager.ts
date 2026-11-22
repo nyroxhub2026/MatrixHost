@@ -291,6 +291,51 @@ export class DockerServerManager {
     }
   }
 
+  async delete(
+    serverId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    // Discovery validates the UUID and verifies MatrixHost ownership.
+    const container = await this.discovery.findByServerId(serverId);
+
+    if (container) {
+      if (container.mountTargets.length > 0) {
+        throw new Error(
+          "Refusing to delete a server container with external mounts.",
+        );
+      }
+
+      if (container.running) {
+        await this.docker.containerCommand(
+          "stop",
+          container.id,
+          serverId,
+          signal,
+        );
+      }
+
+      await this.docker.containerCommand(
+        "remove",
+        container.id,
+        serverId,
+        signal,
+      );
+    }
+
+    // Keep backup archives untouched. Network cleanup is idempotent and
+    // can be retried if Docker reports that another container is attached.
+    const networkName = `matrixhost-${serverId}`;
+    const network = await this.networks.find(networkName);
+
+    if (network) {
+      if (!network.managed || network.serverId !== serverId) {
+        throw new Error("Docker network ownership verification failed.");
+      }
+
+      await this.networks.remove(networkName, serverId, signal);
+    }
+  }
+
   async find(serverId: string) {
     return this.discovery.findByServerId(serverId);
   }
