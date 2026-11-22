@@ -177,6 +177,7 @@ export class DockerClient {
     const labelMap = labels as Record<string, unknown>;
 
     const serverId = labelMap["matrixhost.server-id"];
+    const configHash = labelMap["matrixhost.config-hash"];
     const managed = labelMap[this.managedLabel] === "true";
 
     return {
@@ -196,6 +197,11 @@ export class DockerClient {
           ? serverId
           : null,
       managed,
+      configHash:
+        typeof configHash === "string" &&
+        /^[a-f0-9]{64}$/i.test(configHash)
+          ? configHash
+          : null,
     };
   }
 
@@ -209,6 +215,7 @@ export class DockerClient {
     if (
       !RESOURCE_NAME_PATTERN.test(options.name) ||
       !RESOURCE_NAME_PATTERN.test(options.networkName) ||
+      !/^[a-f0-9]{64}$/i.test(options.configHash) ||
       !IMAGE_PATTERN.test(options.image) ||
       !this.allowedImagePrefixes.some((prefix) =>
         options.image.startsWith(prefix),
@@ -306,6 +313,9 @@ export class DockerClient {
 
       "--label",
       `${this.managedLabel}=true`,
+
+      "--label",
+      `matrixhost.config-hash=${options.configHash}`,
 
       "--memory",
       String(options.memoryBytes),
