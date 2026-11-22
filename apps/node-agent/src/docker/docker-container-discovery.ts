@@ -65,6 +65,7 @@ export class DockerContainerDiscovery {
     }
 
     const containers: DockerContainerSnapshot[] = [];
+    const seenServerIds = new Set<string>();
 
     for (let index = 0; index < ids.length; index += 10) {
       const batch = ids.slice(index, index + 10);
@@ -78,6 +79,13 @@ export class DockerContainerDiscovery {
           snapshot.managed &&
           snapshot.serverId
         ) {
+          if (seenServerIds.has(snapshot.serverId)) {
+            throw new Error(
+              "Multiple managed containers exist for one server.",
+            );
+          }
+
+          seenServerIds.add(snapshot.serverId);
           containers.push(snapshot);
         }
       }
