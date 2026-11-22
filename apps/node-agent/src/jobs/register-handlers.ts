@@ -78,6 +78,7 @@ function createHandler(
             },
             networkName,
             ports: payload.ports,
+            installer: payload.install,
           }, signal);
 
           return {

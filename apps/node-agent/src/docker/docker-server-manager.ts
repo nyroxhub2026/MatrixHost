@@ -3,15 +3,24 @@ import { createHash } from "node:crypto";
 import { DockerClient } from "./docker-client.js";
 import { DockerContainerDiscovery } from "./docker-container-discovery.js";
 import { DockerNetworkManager } from "./docker-network-manager.js";
+import { DockerInstallerRunner } from "./docker-installer-runner.js";
 import { validateDockerCreateOptions } from "./docker-validation.js";
 
 import type { DockerCreateOptions } from "./docker.types.js";
+
+class DockerInstallerExecutionError extends Error {
+  constructor(cause: unknown) {
+    super("Egg installation failed inside the restricted installer container.", { cause });
+    this.name = "DockerInstallerExecutionError";
+  }
+}
 
 export class DockerServerManager {
   constructor(
     private readonly docker: DockerClient,
     private readonly networks: DockerNetworkManager,
     private readonly discovery: DockerContainerDiscovery,
+    private readonly installer: DockerInstallerRunner,
   ) {}
 
   async create(
@@ -40,6 +49,7 @@ export class DockerServerManager {
           `${b.hostIp}:${b.hostPort}/${b.protocol}`,
         ),
       ),
+      installer: options.installer ?? null,
     };
 
     const configHash = createHash("sha256")
@@ -66,6 +76,8 @@ export class DockerServerManager {
           "An existing MatrixHost container does not match this server configuration.",
         );
       }
+
+      await this.ensureInstalled(existing.id, options, signal);
 
       return {
         serverId: options.serverId,
@@ -99,7 +111,9 @@ export class DockerServerManager {
         serverId: options.serverId,
         image: options.image,
         name: `matrixhost-${options.serverId}`,
-        startupCommand: options.startupCommand,
+        startupCommand: options.installer
+          ? `while [ ! -f /var/lib/matrixhost/install-complete ]; do sleep 1; done; ${options.startupCommand}`
+          : options.startupCommand,
         environment: options.environment,
         memoryBytes: options.limits.memoryBytes,
         memorySwapBytes: options.limits.memorySwapBytes,
@@ -136,12 +150,17 @@ export class DockerServerManager {
         );
       }
 
+      await this.ensureInstalled(containerId, options, signal);
+
       return {
         serverId: options.serverId,
         containerId,
         networkName: options.networkName,
       };
     } catch (creationError) {
+      if (creationError instanceof DockerInstallerExecutionError) {
+        throw creationError;
+      }
       let discoveredContainer = null;
 
       try {
@@ -176,6 +195,7 @@ export class DockerServerManager {
           discoveredContainer.configHash === configHash &&
           discoveredContainer.mountTargets.length === 0
         ) {
+          await this.ensureInstalled(discoveredContainer.id, options, signal);
           return {
             serverId: options.serverId,
             containerId: discoveredContainer.id,
@@ -204,6 +224,70 @@ export class DockerServerManager {
       }
 
       throw creationError;
+    }
+  }
+
+  private async ensureInstalled(
+    containerId: string,
+    options: DockerCreateOptions,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!options.installer) {
+      return;
+    }
+
+    await this.docker.containerCommand(
+      "start",
+      containerId,
+      options.serverId,
+      signal,
+    );
+
+    let installError: unknown;
+
+    try {
+      await this.installer.install({
+        serverId: options.serverId,
+        targetContainerId: containerId,
+        networkName: options.networkName,
+        image: options.installer.image,
+        ...(options.installer.entrypoint
+          ? { entrypoint: options.installer.entrypoint }
+          : {}),
+        script: options.installer.script,
+        environment: options.installer.environment,
+        limits: {
+          memoryBytes: options.limits.memoryBytes,
+          memorySwapBytes: options.limits.memorySwapBytes,
+          cpuPercent: options.limits.cpuPercent,
+          diskBytes: options.limits.diskBytes,
+          pidsLimit: options.limits.pidsLimit,
+        },
+      }, signal);
+    } catch (error) {
+      installError = error;
+    }
+
+    try {
+      const container = await this.docker.inspectContainer(containerId);
+
+      if (container?.running) {
+        await this.docker.containerCommand(
+          "stop",
+          containerId,
+          options.serverId,
+        );
+      }
+    } catch (stopError) {
+      throw new DockerInstallerExecutionError(
+        installError
+          ? new AggregateError([installError, stopError], "Installer failed and the server container could not be stopped.")
+          : stopError,
+      );
+    }
+
+    if (installError) {
+      throw new DockerInstallerExecutionError(installError);
     }
   }
 

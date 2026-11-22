@@ -85,6 +85,9 @@ async function buildJobPayload(
       swapLimitBytes: bigint;
       diskLimitBytes: bigint;
       cpuLimit: number;
+      egg: {
+        scripts: Prisma.JsonValue;
+      };
       allocations: {
         ipAddress: string;
         port: number;
@@ -124,10 +127,68 @@ async function buildJobPayload(
     throw new Error("Server must have exactly one primary allocation.");
   }
 
+  const environment = parseEnvironment(job.server.environment);
+  const eggScripts = job.server.egg.scripts;
+
+  let installer:
+    | {
+        image: string;
+        entrypoint?: string;
+        script: string;
+        environment: Record<string, string>;
+      }
+    | undefined;
+
+  if (
+    eggScripts !== null &&
+    typeof eggScripts === "object" &&
+    !Array.isArray(eggScripts)
+  ) {
+    const scripts = eggScripts as Prisma.JsonObject;
+    const install = scripts.install;
+
+    if (scripts.privileged === true) {
+      throw new Error("Privileged Egg installers are not permitted.");
+    }
+
+    if (
+      install !== null &&
+      typeof install === "object" &&
+      !Array.isArray(install)
+    ) {
+      const installConfig = install as Prisma.JsonObject;
+      const script = installConfig.script;
+      const image = installConfig.container;
+      const entrypoint = installConfig.entrypoint;
+
+      if (typeof script === "string" && script.trim().length > 0) {
+        if (
+          Buffer.byteLength(script, "utf8") > 256 * 1024 ||
+          script.includes("\0") ||
+          typeof image !== "string" ||
+          image.length === 0 ||
+          image.length > 255 ||
+          (entrypoint !== undefined &&
+            (typeof entrypoint !== "string" ||
+              !/^(?:\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(entrypoint)))
+        ) {
+          throw new Error("Egg installer configuration is invalid.");
+        }
+
+        installer = {
+          image,
+          ...(typeof entrypoint === "string" ? { entrypoint } : {}),
+          script,
+          environment,
+        };
+      }
+    }
+  }
+
   return {
     image: job.server.dockerImage,
     startup: job.server.startupCommand,
-    environment: parseEnvironment(job.server.environment),
+    environment,
     ports: primaryAllocations.map((allocation) => ({
       hostIp: allocation.ipAddress,
       hostPort: allocation.port,
@@ -149,6 +210,7 @@ async function buildJobPayload(
       ),
       cpuPercent: job.server.cpuLimit * 100,
     },
+    ...(installer ? { install: installer } : {}),
   };
 }
 
@@ -275,6 +337,11 @@ export async function claimNextNodeJob(
     include: {
       server: {
         include: {
+          egg: {
+            select: {
+              scripts: true,
+            },
+          },
           allocations: {
             where: {
               isPrimary: true,

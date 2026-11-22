@@ -269,9 +269,20 @@ export async function createServer(
       }
 
       if (eggScripts.install?.script?.trim()) {
-        throw AppError.conflict(
-          "This Egg requires an installer script. Isolated installer execution must be enabled before this Egg can be provisioned."
-        );
+        if (
+          !eggScripts.install.container ||
+          eggScripts.install.container.length > 255 ||
+          Buffer.byteLength(eggScripts.install.script, "utf8") > 256 * 1024 ||
+          eggScripts.install.script.includes("\0") ||
+          (eggScripts.install.entrypoint !== undefined &&
+            !/^(?:\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(
+              eggScripts.install.entrypoint,
+            ))
+        ) {
+          throw AppError.badRequest(
+            "Egg installer configuration is invalid or exceeds the supported limits.",
+          );
+        }
       }
 
       const selectedNode = input.nodeId

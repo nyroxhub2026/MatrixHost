@@ -47,6 +47,18 @@ async function main(): Promise<void> {
     );
   }
 
+  if (docker.initialHealth.healthy) {
+    const removedInstallers =
+      await docker.runtime.cleanupOrphanedInstallers();
+
+    if (removedInstallers > 0) {
+      logger.warn(
+        "[MatrixHost Agent] Removed orphaned installer containers:",
+        removedInstallers,
+      );
+    }
+  }
+
   const httpClient = new AgentHttpClient(config);
   const jobManager = new JobManager();
 
