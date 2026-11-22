@@ -206,14 +206,33 @@ async function main(): Promise<void> {
       heartbeatTimer = undefined;
     }
 
-    await webSocketClient.stop();
-    await jobManager.stop();
+    const shutdownTasks = await Promise.allSettled([
+      webSocketClient.stop(),
+      jobManager.stop(),
+      activeHeartbeat ?? Promise.resolve(),
+    ]);
 
-    if (activeHeartbeat) {
-      await activeHeartbeat;
+    for (const task of shutdownTasks) {
+      if (task.status === "rejected") {
+        console.error(
+          "[MatrixHost Agent] Shutdown task failed:",
+          task.reason instanceof Error
+            ? task.reason.message
+            : "Unknown shutdown error.",
+        );
+      }
     }
 
-    await docker.runtime.shutdown();
+    try {
+      await docker.runtime.shutdown();
+    } catch (error) {
+      console.error(
+        "[MatrixHost Agent] Docker runtime shutdown failed:",
+        error instanceof Error
+          ? error.message
+          : "Unknown shutdown error.",
+      );
+    }
 
     console.info(
       "[MatrixHost Agent] Shutdown complete.",
