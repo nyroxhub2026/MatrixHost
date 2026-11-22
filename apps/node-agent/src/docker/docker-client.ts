@@ -1,7 +1,17 @@
 import { execFile } from "node:child_process";
 
-const COMMAND_TIMEOUT_MS = 10_000;
+const COMMAND_TIMEOUT_MS = 30_000;
 const MAX_BUFFER_BYTES = 1024 * 1024;
+
+const CONTAINER_ID_PATTERN =
+  /^[a-f0-9]{12,64}$/i;
+
+export type DockerContainerOperation =
+  | "start"
+  | "stop"
+  | "restart"
+  | "kill"
+  | "remove";
 
 export interface DockerContainerSnapshot {
   id: string;
@@ -58,9 +68,7 @@ export class DockerClient {
   async inspectContainer(
     containerId: string,
   ): Promise<DockerContainerSnapshot | null> {
-    if (!/^[a-f0-9]{12,64}$/i.test(containerId)) {
-      throw new Error("Invalid Docker container ID.");
-    }
+    this.validateContainerId(containerId);
 
     let output: string;
 
@@ -73,15 +81,8 @@ export class DockerClient {
       ]);
 
       output = result.stdout;
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.includes("No such object")
-      ) {
-        return null;
-      }
-
-      throw error;
+    } catch {
+      return null;
     }
 
     let parsed: DockerInspectOutput;
@@ -121,6 +122,37 @@ export class DockerClient {
           ? exitCode
           : null,
     };
+  }
+
+  async containerCommand(
+    operation: DockerContainerOperation,
+    containerId: string,
+  ): Promise<void> {
+    this.validateContainerId(containerId);
+
+    const commands: Record<
+      DockerContainerOperation,
+      string
+    > = {
+      start: "start",
+      stop: "stop",
+      restart: "restart",
+      kill: "kill",
+      remove: "rm",
+    };
+
+    await this.run([
+      commands[operation],
+      containerId,
+    ]);
+  }
+
+  private validateContainerId(
+    containerId: string,
+  ): void {
+    if (!CONTAINER_ID_PATTERN.test(containerId)) {
+      throw new Error("Invalid Docker container ID.");
+    }
   }
 
   private run(
