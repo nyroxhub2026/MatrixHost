@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyError, FastifyInstance } from "fastify";
 
 import { AppError } from "@matrixhost/shared";
 
@@ -6,11 +6,13 @@ export function registerErrorHandler(
   app: FastifyInstance
 ): void {
   app.setErrorHandler((error, request, reply) => {
+    const fastifyError = error as FastifyError;
+
     request.log.error(
       {
         requestId: request.id,
-        errorName: error.name,
-        errorCode: error.code,
+        errorName: fastifyError.name,
+        errorCode: fastifyError.code,
       },
       "API request failed"
     );
@@ -20,10 +22,10 @@ export function registerErrorHandler(
     }
 
     if (error instanceof AppError) {
-      return reply.status(error.statusCode).send({
+      return reply.status(fastifyError.statusCode).send({
         success: false,
         error: {
-          code: error.code,
+          code: fastifyError.code,
           message: error.message,
           requestId: request.id,
         },
@@ -31,11 +33,11 @@ export function registerErrorHandler(
     }
 
     const statusCode =
-      typeof error.statusCode === "number" &&
-      Number.isInteger(error.statusCode) &&
-      error.statusCode >= 400 &&
-      error.statusCode < 500
-        ? error.statusCode
+      typeof fastifyError.statusCode === "number" &&
+      Number.isInteger(fastifyError.statusCode) &&
+      fastifyError.statusCode >= 400 &&
+      fastifyError.statusCode < 500
+        ? fastifyError.statusCode
         : 500;
 
     const isServerError = statusCode >= 500;
