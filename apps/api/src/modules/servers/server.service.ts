@@ -72,7 +72,7 @@ function getDockerImage(images: Prisma.JsonValue): string {
     );
   }
 
-  const image = values[0].trim();
+  const image = values[0]!.trim();
 
   const imagePattern =
     /^(?:[a-z0-9.-]+(?::[0-9]{1,5})?\/)?[a-z0-9]+(?:[._/-][a-z0-9]+)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[a-f0-9]{64})?$/;
