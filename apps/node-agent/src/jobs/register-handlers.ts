@@ -111,7 +111,7 @@ function createHandler(
 
         case "DELETE_SERVER": {
           throw new Error(
-            "DELETE_SERVER is disabled until backup, ownership and volume deletion safeguards are implemented.",
+            "DELETE_SERVER is disabled until backup verification, retention policy and container/network cleanup safeguards are implemented.",
           );
         }
 
