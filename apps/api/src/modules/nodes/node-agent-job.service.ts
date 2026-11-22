@@ -148,6 +148,7 @@ async function buildJobPayload(
       backupId: backup.id,
       storagePath: backup.storagePath,
       checksum: backup.checksum,
+      maxBytes: toSafeNumber(job.server.diskLimitBytes, "disk"),
     };
   }
 
