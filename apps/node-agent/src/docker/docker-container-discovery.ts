@@ -1,10 +1,6 @@
 import { execFile } from "node:child_process";
-
 import { DockerClient } from "./docker-client.js";
-
-import type {
-  DockerContainerSnapshot,
-} from "./docker-client.js";
+import type { DockerContainerSnapshot } from "./docker-client.js";
 
 const SERVER_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -50,7 +46,8 @@ export class DockerContainerDiscovery {
 
     if (
       !container ||
-      container.serverId !== serverId
+      container.serverId !== serverId ||
+      !container.managed
     ) {
       throw new Error(
         "Docker container ownership verification failed.",
@@ -64,8 +61,7 @@ export class DockerContainerDiscovery {
     serverId: string,
   ): Promise<string[]> {
     const managedLabel =
-      this.options.managedLabel ??
-      "matrixhost.managed";
+      this.options.managedLabel ?? "matrixhost.managed";
 
     const timeoutMs =
       this.options.timeoutMs ?? 10_000;
@@ -74,10 +70,16 @@ export class DockerContainerDiscovery {
       this.options.maxBufferBytes ?? 1024 * 1024;
 
     if (
-      !/^[a-zA-Z0-9_.-]{1,128}$/.test(managedLabel)
+      !/^[a-zA-Z0-9_.-]{1,128}$/.test(managedLabel) ||
+      !Number.isInteger(timeoutMs) ||
+      timeoutMs < 1000 ||
+      timeoutMs > 120_000 ||
+      !Number.isInteger(maxBufferBytes) ||
+      maxBufferBytes < 65_536 ||
+      maxBufferBytes > 16 * 1024 * 1024
     ) {
       return Promise.reject(
-        new Error("Invalid Docker managed label."),
+        new Error("Invalid Docker discovery configuration."),
       );
     }
 
@@ -110,7 +112,6 @@ export class DockerContainerDiscovery {
                 }`,
               ),
             );
-
             return;
           }
 
@@ -129,7 +130,6 @@ export class DockerContainerDiscovery {
                 "Docker returned an invalid container ID.",
               ),
             );
-
             return;
           }
 
