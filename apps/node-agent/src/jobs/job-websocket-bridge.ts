@@ -2,7 +2,6 @@ import type { AgentWebSocketClient } from "../protocol/websocket-client.js";
 import type { AgentIncomingMessage } from "../protocol/message-schemas.js";
 
 import type { JobManager } from "./job-manager.js";
-import type { AgentJob } from "./job.types.js";
 
 export class JobWebSocketBridge {
   constructor(
@@ -13,9 +12,7 @@ export class JobWebSocketBridge {
   async handleMessage(
     message: Extract<AgentIncomingMessage, { type: "job" }>,
   ): Promise<void> {
-    const submission = this.manager.submit(
-      message.job as AgentJob,
-    );
+    const submission = this.manager.submit(message.job);
 
     const acknowledged = this.client.send({
       type: "job_ack",
@@ -37,7 +34,7 @@ export class JobWebSocketBridge {
 
     const result = await submission.result;
 
-    if (!this.client.send({
+    const sent = this.client.send({
       type: "job_result",
       jobId: result.jobId,
       success: result.success,
@@ -47,7 +44,9 @@ export class JobWebSocketBridge {
       ...(result.error !== undefined
         ? { error: result.error }
         : {}),
-    })) {
+    });
+
+    if (!sent) {
       console.error(
         "[MatrixHost Agent] Could not send job result:",
         result.jobId,
