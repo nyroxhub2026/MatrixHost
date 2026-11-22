@@ -12,6 +12,8 @@ const SUPPORTED_JOB_TYPES = [
   "RESTART_SERVER",
   "KILL_SERVER",
   "DELETE_SERVER",
+  "CREATE_BACKUP",
+  "RESTORE_BACKUP",
 ] as const;
 
 type SupportedJobType =
@@ -70,11 +72,20 @@ function parseEnvironment(
   return result;
 }
 
+function jobPayloadObject(job: { payload?: Prisma.JsonValue }): Record<string, unknown> {
+  const value = job.payload;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid job payload.");
+  }
+  return value as Record<string, unknown>;
+}
+
 async function buildJobPayload(
   job: {
     type: SupportedJobType;
     serverId: string | null;
     nodeId: string;
+    payload: Prisma.JsonValue;
     server: {
       id: string;
       nodeId: string;
@@ -106,6 +117,39 @@ async function buildJobPayload(
     job.server.nodeId !== job.nodeId
   ) {
     throw new Error("Server-node relationship is invalid.");
+  }
+
+  if (job.type === "CREATE_BACKUP") {
+    const payload = jobPayloadObject(job);
+    const backupId = payload.backupId;
+    if (typeof backupId !== "string" || !/^[0-9a-f-]{36}$/i.test(backupId)) {
+      throw new Error("Invalid backup identifier.");
+    }
+    return {
+      backupId,
+      maxBytes: toSafeNumber(job.server.diskLimitBytes, "disk"),
+    };
+  }
+
+  if (job.type === "RESTORE_BACKUP") {
+    const payload = jobPayloadObject(job);
+    const backupId = payload.backupId;
+    if (typeof backupId !== "string" || !/^[0-9a-f-]{36}$/i.test(backupId)) {
+      throw new Error("Invalid backup identifier.");
+    }
+    const backup = await prisma.backup.findFirst({
+      where: { id: backupId, serverId: job.serverId, status: "RESTORING" },
+      select: { id: true, storagePath: true, checksum: true },
+    });
+    if (!backup?.storagePath || !backup.checksum) {
+      throw new Error("Verified backup archive was not found.");
+    }
+    return {
+      backupId: backup.id,
+      storagePath: backup.storagePath,
+      checksum: backup.checksum,
+      maxBytes: toSafeNumber(job.server.diskLimitBytes, "disk"),
+    };
   }
 
   if (job.type !== "CREATE_SERVER") {
@@ -409,6 +453,7 @@ export async function claimNextNodeJob(
       type: job.type as SupportedJobType,
       serverId: job.serverId,
       nodeId: job.nodeId,
+      payload: job.payload,
       server: job.server,
     });
 

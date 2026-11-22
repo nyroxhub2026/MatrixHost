@@ -124,6 +124,7 @@ export async function completeNodeJob(
       select: {
         type: true,
         serverId: true,
+        payload: true,
       },
     });
 
@@ -136,11 +137,45 @@ export async function completeNodeJob(
         ? input.result.containerId
         : undefined;
 
-    const validCreateResult =
-      job.type !== "CREATE_SERVER" ||
+    const payload = job.payload !== null && typeof job.payload === "object" && !Array.isArray(job.payload)
+      ? job.payload as Record<string, unknown>
+      : {};
+    const backupId = typeof payload.backupId === "string" ? payload.backupId : undefined;
+    const backupStoragePath = typeof input.result?.storagePath === "string" ? input.result.storagePath : undefined;
+    const backupChecksum = typeof input.result?.checksum === "string" ? input.result.checksum : undefined;
+    const backupSize = input.result?.sizeBytes;
+    const validCreateBackupResult =
+      job.type !== "CREATE_BACKUP" ||
       !input.success ||
-      (containerId !== undefined &&
-        /^[a-f0-9]{12,64}$/i.test(containerId));
+      (backupId !== undefined &&
+        input.result?.backupId === backupId &&
+        backupStoragePath === `${job.serverId}/${backupId}.tar` &&
+        backupChecksum !== undefined &&
+        /^[a-f0-9]{64}$/i.test(backupChecksum) &&
+        typeof backupSize === "number" &&
+        Number.isSafeInteger(backupSize) &&
+        backupSize > 0);
+    const restoreBackup = job.type === "RESTORE_BACKUP" && backupId && job.serverId
+      ? await transaction.backup.findFirst({
+          where: { id: backupId, serverId: job.serverId, status: "RESTORING" },
+          select: { checksum: true },
+        })
+      : null;
+    const validRestoreBackupResult =
+      job.type !== "RESTORE_BACKUP" ||
+      !input.success ||
+      (backupId !== undefined &&
+        input.result?.backupId === backupId &&
+        input.result?.restored === true &&
+        backupChecksum !== undefined &&
+        /^[a-f0-9]{64}$/i.test(backupChecksum) &&
+        restoreBackup?.checksum === backupChecksum);
+    const validCreateResult =
+      (job.type !== "CREATE_SERVER" ||
+        !input.success ||
+        (containerId !== undefined && /^[a-f0-9]{12,64}$/i.test(containerId))) &&
+      validCreateBackupResult &&
+      validRestoreBackupResult;
 
     const completionData:
       Prisma.NodeJobUpdateManyMutationInput = validCreateResult
@@ -150,7 +185,7 @@ export async function completeNodeJob(
             status: "FAILED",
             errorCode: "INVALID_AGENT_RESULT",
             errorMessage:
-              "The Agent did not return a valid container identifier.",
+              "The Agent returned an invalid result for this operation.",
           };
 
     const updated = await transaction.nodeJob.updateMany({
@@ -169,6 +204,28 @@ export async function completeNodeJob(
       return false;
     }
 
+    if (job.type === "CREATE_BACKUP" && backupId && job.serverId) {
+      await transaction.backup.updateMany({
+        where: { id: backupId, serverId: job.serverId },
+        data: input.success && validCreateBackupResult
+          ? {
+              status: "COMPLETED",
+              storagePath: backupStoragePath!,
+              checksum: backupChecksum!,
+              sizeBytes: BigInt(backupSize as number),
+              completedAt: now,
+            }
+          : { status: "FAILED" },
+      });
+    }
+
+    if (job.type === "RESTORE_BACKUP" && backupId && job.serverId) {
+      await transaction.backup.updateMany({
+        where: { id: backupId, serverId: job.serverId, status: "RESTORING" },
+        data: { status: "COMPLETED" },
+      });
+    }
+
     if (job.serverId) {
       let nextStatus:
         | "OFFLINE"
@@ -181,6 +238,8 @@ export async function completeNodeJob(
         (!input.success || !validCreateResult)
       ) {
         nextStatus = "ERROR";
+      } else if (job.type === "RESTORE_BACKUP") {
+        nextStatus = input.success && validCreateResult ? "OFFLINE" : "ERROR";
       } else if (input.success) {
         switch (job.type) {
           case "CREATE_SERVER":
