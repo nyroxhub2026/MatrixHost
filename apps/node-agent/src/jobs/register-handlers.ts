@@ -63,7 +63,13 @@ function createHandler(runtime: DockerRuntime, type: AgentJobType, defaultPidsLi
           await runtime.servers.kill(serverId, signal);
           break;
         case "DELETE_SERVER":
-          throw new Error("DELETE_SERVER remains disabled until verified backup retention and safe cleanup are implemented.");
+          await runtime.servers.delete(serverId, signal);
+          return {
+            serverId,
+            operation: type,
+            deleted: true,
+            completedAt: new Date().toISOString(),
+          };
         case "CREATE_BACKUP": {
           const payload = createBackupJobPayloadSchema.parse(job.payload);
           const container = await runtime.servers.find(serverId);
