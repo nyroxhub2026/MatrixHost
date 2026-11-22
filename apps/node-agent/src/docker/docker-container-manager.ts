@@ -1,12 +1,6 @@
 import { DockerClient } from "./docker-client.js";
-
-import type {
-  DockerCommandResult,
-} from "./docker.types.js";
-
-import type {
-  DockerContainerOperation,
-} from "./docker-client.js";
+import type { DockerCommandResult } from "./docker.types.js";
+import type { DockerContainerOperation } from "./docker-client.js";
 
 export class DockerContainerManager {
   constructor(
@@ -64,10 +58,15 @@ export class DockerContainerManager {
         success: true,
         message: `Container ${operation} completed.`,
       };
-    } catch {
+    } catch (error) {
+      const reason =
+        error instanceof Error
+          ? error.message
+          : "Unknown Docker error.";
+
       return {
         success: false,
-        message: `Container ${operation} failed.`,
+        message: `Container ${operation} failed: ${reason}`,
       };
     }
   }
