@@ -210,7 +210,7 @@ export async function completeNodeJob(
             job.type === "CREATE_SERVER"
               ? {
                   installedAt: now,
-                  containerId,
+                  containerId: containerId!,
                 }
               : {}),
             ...(input.success &&
