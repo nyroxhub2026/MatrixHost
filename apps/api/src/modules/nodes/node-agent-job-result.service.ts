@@ -131,6 +131,28 @@ export async function completeNodeJob(
       return false;
     }
 
+    const containerId =
+      typeof input.result?.containerId === "string"
+        ? input.result.containerId
+        : undefined;
+
+    const validCreateResult =
+      job.type !== "CREATE_SERVER" ||
+      !input.success ||
+      (containerId !== undefined &&
+        /^[a-f0-9]{12,64}$/i.test(containerId));
+
+    const completionData:
+      Prisma.NodeJobUpdateManyMutationInput = validCreateResult
+        ? data
+        : {
+            ...data,
+            status: "FAILED",
+            errorCode: "INVALID_AGENT_RESULT",
+            errorMessage:
+              "The Agent did not return a valid container identifier.",
+          };
+
     const updated = await transaction.nodeJob.updateMany({
       where: {
         id: jobId,
@@ -140,7 +162,7 @@ export async function completeNodeJob(
           in: ["DELIVERED", "RUNNING"],
         },
       },
-      data,
+      data: completionData,
     });
 
     if (updated.count !== 1) {
@@ -154,7 +176,10 @@ export async function completeNodeJob(
         | "ERROR"
         | undefined;
 
-      if (!input.success && job.type === "CREATE_SERVER") {
+      if (
+        job.type === "CREATE_SERVER" &&
+        (!input.success || !validCreateResult)
+      ) {
         nextStatus = "ERROR";
       } else if (input.success) {
         switch (job.type) {
@@ -180,8 +205,13 @@ export async function completeNodeJob(
           },
           data: {
             status: nextStatus,
-            ...(input.success && job.type === "CREATE_SERVER"
-              ? { installedAt: now }
+            ...(input.success &&
+            validCreateResult &&
+            job.type === "CREATE_SERVER"
+              ? {
+                  installedAt: now,
+                  containerId,
+                }
               : {}),
             ...(input.success &&
             (job.type === "START_SERVER" ||
