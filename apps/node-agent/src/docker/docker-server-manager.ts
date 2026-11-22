@@ -251,7 +251,9 @@ export class DockerServerManager {
         targetContainerId: containerId,
         networkName: options.networkName,
         image: options.installer.image,
-        entrypoint: options.installer.entrypoint,
+        ...(options.installer.entrypoint
+          ? { entrypoint: options.installer.entrypoint }
+          : {}),
         script: options.installer.script,
         environment: options.installer.environment,
         limits: {
