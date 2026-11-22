@@ -1,6 +1,7 @@
 import { DockerClient } from "./docker-client.js";
 import { DockerContainerDiscovery } from "./docker-container-discovery.js";
 import { DockerNetworkManager } from "./docker-network-manager.js";
+import { DockerInstallerRunner } from "./docker-installer-runner.js";
 import { DockerRuntime } from "./docker-runtime.js";
 
 import type { DockerConfig } from "./docker.config.js";
@@ -54,9 +55,20 @@ export function createDockerRuntime(
     },
   );
 
+  const installer = new DockerInstallerRunner(binary, {
+    timeoutMs: config?.DOCKER_INSTALLER_TIMEOUT_MS ?? 900_000,
+    maxBufferBytes,
+    managedLabel,
+    allowedImagePrefixes:
+      config?.DOCKER_ALLOWED_INSTALLER_IMAGE_PREFIXES ?? [
+        "ghcr.io/pterodactyl/installers:",
+      ],
+  });
+
   return new DockerRuntime(
     docker,
     networks,
     discovery,
+    installer,
   );
 }
