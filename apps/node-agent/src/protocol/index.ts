@@ -1,4 +1,5 @@
 export { AgentHttpClient } from "./http-client.js";
+export type { AgentServerStatus } from "./http-client.js";
 export { AgentWebSocketClient } from "./websocket-client.js";
 
 export type {
