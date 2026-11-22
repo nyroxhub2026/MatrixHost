@@ -26,7 +26,11 @@ export class DockerRuntime {
     );
   }
 
-  async cleanupOrphanedInstallers(): Promise<number> {\n    return this.installer.cleanupOrphanedInstallers();\n  }\n\n  async status(): Promise<DockerRuntimeStatus> {
+  async cleanupOrphanedInstallers(): Promise<number> {
+    return this.installer.cleanupOrphanedInstallers();
+  }
+
+  async status(): Promise<DockerRuntimeStatus> {
     try {
       const version = await this.docker.version();
 
