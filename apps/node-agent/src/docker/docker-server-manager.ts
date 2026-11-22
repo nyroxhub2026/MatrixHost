@@ -211,6 +211,10 @@ export class DockerServerManager {
     return this.discovery.findByServerId(serverId);
   }
 
+  async list() {
+    return this.discovery.listManaged();
+  }
+
   async start(
     serverId: string,
     signal?: AbortSignal,
