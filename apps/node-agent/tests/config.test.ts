@@ -31,3 +31,18 @@ test("parses a comma-separated Docker image allowlist", () => {
   ]);
   assert.equal(config.DOCKER_DEFAULT_PIDS_LIMIT, 768);
 });
+
+
+test("loads safe node-local backup storage defaults", () => {
+  const config = loadDockerConfig({});
+  assert.equal(config.DOCKER_BACKUP_DIRECTORY, "/var/lib/matrixhost/backups");
+  assert.equal(config.DOCKER_BACKUP_TIMEOUT_MS, 3600000);
+  assert.equal(config.DOCKER_BACKUP_MAX_BYTES, 20 * 1024 * 1024 * 1024);
+});
+
+test("rejects a relative backup storage directory", () => {
+  assert.throws(
+    () => loadDockerConfig({ DOCKER_BACKUP_DIRECTORY: "../backups" }),
+    /Invalid Docker configuration/,
+  );
+});
