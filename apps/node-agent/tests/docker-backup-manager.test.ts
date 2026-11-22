@@ -15,7 +15,7 @@ test("rejects backup paths that can escape the configured storage directory", as
   try {
     const manager = new DockerBackupManager("docker", { directory });
     await assert.rejects(
-      manager.restore(serverId, containerId, backupId, "../outside.tar", "a".repeat(64)),
+      manager.restore(serverId, containerId, backupId, "../outside.tar", "a".repeat(64), 1024 * 1024),
       /Invalid backup storage path/,
     );
   } finally {
