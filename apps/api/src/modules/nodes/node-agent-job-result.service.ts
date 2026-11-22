@@ -178,7 +178,7 @@ export async function completeNodeJob(
             status: "FAILED",
             errorCode: "INVALID_AGENT_RESULT",
             errorMessage:
-              "The Agent did not return a valid container identifier.",
+              "The Agent returned an invalid result for this operation.",
           };
 
     const updated = await transaction.nodeJob.updateMany({
@@ -197,7 +197,7 @@ export async function completeNodeJob(
       return false;
     }
 
-    if (job.type === "CREATE_BACKUP" && backupId) {
+    if (job.type === "CREATE_BACKUP" && backupId && job.serverId) {
       await transaction.backup.updateMany({
         where: { id: backupId, serverId: job.serverId },
         data: input.success && validCreateBackupResult
@@ -212,7 +212,7 @@ export async function completeNodeJob(
       });
     }
 
-    if (job.type === "RESTORE_BACKUP" && backupId) {
+    if (job.type === "RESTORE_BACKUP" && backupId && job.serverId) {
       await transaction.backup.updateMany({
         where: { id: backupId, serverId: job.serverId, status: "RESTORING" },
         data: { status: "COMPLETED" },
