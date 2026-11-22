@@ -9,6 +9,12 @@ const CONTAINER_ID_PATTERN =
 const SERVER_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const RESOURCE_NAME_PATTERN =
+  /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+
+const IMAGE_PATTERN =
+  /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/;
+
 export type DockerContainerOperation =
   | "start"
   | "stop"
@@ -40,6 +46,18 @@ interface DockerInspectOutput {
   };
 }
 
+export interface DockerCreateOptions {
+  serverId: string;
+  image: string;
+  name: string;
+  environment: Record<string, string>;
+  memoryBytes: number;
+  memorySwapBytes: number;
+  cpuPercent: number;
+  pidsLimit: number;
+  volumeName: string;
+}
+
 export class DockerClient {
   constructor(
     private readonly binary = "docker",
@@ -55,7 +73,9 @@ export class DockerClient {
     const version = output.stdout.trim();
 
     if (!version) {
-      throw new Error("Docker Engine version is unavailable.");
+      throw new Error(
+        "Docker Engine version is unavailable.",
+      );
     }
 
     return version;
@@ -75,19 +95,39 @@ export class DockerClient {
   ): Promise<DockerContainerSnapshot | null> {
     this.validateContainerId(containerId);
 
-    const result = await this.run([
-      "inspect",
-      "--format",
-      "{{json .}}",
-      containerId,
-    ]);
+    let result: {
+      stdout: string;
+      stderr: string;
+    };
+
+    try {
+      result = await this.run([
+        "inspect",
+        "--format",
+        "{{json .}}",
+        containerId,
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("No such object")
+      ) {
+        return null;
+      }
+
+      throw error;
+    }
 
     let parsed: DockerInspectOutput;
 
     try {
-      parsed = JSON.parse(result.stdout) as DockerInspectOutput;
+      parsed = JSON.parse(
+        result.stdout,
+      ) as DockerInspectOutput;
     } catch {
-      throw new Error("Docker returned invalid inspect data.");
+      throw new Error(
+        "Docker returned invalid inspect data.",
+      );
     }
 
     const id = parsed.Id;
@@ -108,7 +148,9 @@ export class DockerClient {
       typeof labels !== "object" ||
       Array.isArray(labels)
     ) {
-      throw new Error("Docker returned incomplete container data.");
+      throw new Error(
+        "Docker returned incomplete container data.",
+      );
     }
 
     const serverId = (
@@ -134,6 +176,103 @@ export class DockerClient {
     };
   }
 
+  async createContainer(
+    options: DockerCreateOptions,
+  ): Promise<string> {
+    if (!SERVER_ID_PATTERN.test(options.serverId)) {
+      throw new Error("Invalid server ID.");
+    }
+
+    if (
+      !RESOURCE_NAME_PATTERN.test(options.name) ||
+      !RESOURCE_NAME_PATTERN.test(options.volumeName) ||
+      !IMAGE_PATTERN.test(options.image)
+    ) {
+      throw new Error(
+        "Invalid Docker container configuration.",
+      );
+    }
+
+    if (
+      !Number.isSafeInteger(options.memoryBytes) ||
+      options.memoryBytes <= 0 ||
+      !Number.isSafeInteger(options.memorySwapBytes) ||
+      options.memorySwapBytes < options.memoryBytes ||
+      !Number.isSafeInteger(options.cpuPercent) ||
+      options.cpuPercent <= 0 ||
+      options.cpuPercent > 100_000 ||
+      !Number.isSafeInteger(options.pidsLimit) ||
+      options.pidsLimit <= 0 ||
+      options.pidsLimit > 100_000
+    ) {
+      throw new Error(
+        "Invalid Docker resource limits.",
+      );
+    }
+
+    const args = [
+      "create",
+      "--name",
+      options.name,
+      "--label",
+      `matrixhost.server-id=${options.serverId}`,
+      "--label",
+      "matrixhost.managed=true",
+      "--memory",
+      String(options.memoryBytes),
+      "--memory-swap",
+      String(options.memorySwapBytes),
+      "--cpus",
+      String(options.cpuPercent / 100),
+      "--pids-limit",
+      String(options.pidsLimit),
+      "--network",
+      "none",
+      "--mount",
+      `type=volume,source=${options.volumeName},target=/home/container`,
+      "--restart",
+      "unless-stopped",
+    ];
+
+    const entries = Object.entries(
+      options.environment,
+    );
+
+    if (entries.length > 100) {
+      throw new Error(
+        "Too many Docker environment variables.",
+      );
+    }
+
+    for (const [key, value] of entries) {
+      if (
+        !/^[A-Z_][A-Z0-9_]*$/.test(key) ||
+        typeof value !== "string" ||
+        value.length > 4096 ||
+        value.includes("\0")
+      ) {
+        throw new Error(
+          "Invalid Docker environment variable.",
+        );
+      }
+
+      args.push("--env", `${key}=${value}`);
+    }
+
+    args.push(options.image);
+
+    const result = await this.run(args);
+    const containerId = result.stdout.trim();
+
+    if (!CONTAINER_ID_PATTERN.test(containerId)) {
+      throw new Error(
+        "Docker returned an invalid container ID.",
+      );
+    }
+
+    return containerId;
+  }
+
   async containerCommand(
     operation: DockerContainerOperation,
     containerId: string,
@@ -145,15 +284,23 @@ export class DockerClient {
       throw new Error("Invalid server ID.");
     }
 
-    const container = await this.inspectContainer(containerId);
+    const container = await this.inspectContainer(
+      containerId,
+    );
 
-    if (!container || container.serverId !== expectedServerId) {
+    if (
+      !container ||
+      container.serverId !== expectedServerId
+    ) {
       throw new Error(
         "Docker container ownership verification failed.",
       );
     }
 
-    const commands: Record<DockerContainerOperation, string> = {
+    const commands: Record<
+      DockerContainerOperation,
+      string
+    > = {
       start: "start",
       stop: "stop",
       restart: "restart",
@@ -171,7 +318,9 @@ export class DockerClient {
     containerId: string,
   ): void {
     if (!CONTAINER_ID_PATTERN.test(containerId)) {
-      throw new Error("Invalid Docker container ID.");
+      throw new Error(
+        "Invalid Docker container ID.",
+      );
     }
   }
 
@@ -201,10 +350,14 @@ export class DockerClient {
                 }`,
               ),
             );
+
             return;
           }
 
-          resolve({ stdout, stderr });
+          resolve({
+            stdout,
+            stderr,
+          });
         },
       );
     });
