@@ -169,7 +169,7 @@ async function buildJobPayload(
           image.length > 255 ||
           (entrypoint !== undefined &&
             (typeof entrypoint !== "string" ||
-              !/^(?:\\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(entrypoint)))
+              !/^(?:\/[a-zA-Z0-9_./-]{1,200}|[a-zA-Z0-9_.-]{1,64})$/.test(entrypoint)))
         ) {
           throw new Error("Egg installer configuration is invalid.");
         }
