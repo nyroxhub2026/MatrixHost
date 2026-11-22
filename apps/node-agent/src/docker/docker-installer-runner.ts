@@ -350,6 +350,10 @@ export class DockerInstallerRunner {
     maxBytes: number,
     signal?: AbortSignal,
   ): Promise<void> {
+    if (signal?.aborted) {
+      throw new Error("Egg installation was cancelled.");
+    }
+
     const source = spawn(
       this.binary,
       [
@@ -434,6 +438,8 @@ export class DockerInstallerRunner {
 
     source.on("error", (error) => finish(error));
     destination.on("error", (error) => finish(error));
+    source.stdout.on("error", (error) => finish(error));
+    destination.stdin.on("error", (error) => finish(error));
 
     source.on("close", (code) => {
       if (code !== 0) {
@@ -484,6 +490,10 @@ export class DockerInstallerRunner {
     input: Buffer,
     signal?: AbortSignal,
   ): Promise<void> {
+    if (signal?.aborted) {
+      return Promise.reject(new Error("Egg installation was cancelled."));
+    }
+
     return new Promise((resolve, reject) => {
       const child = spawn(this.binary, args, {
         shell: false,
