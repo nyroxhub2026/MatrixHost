@@ -58,6 +58,31 @@ const dockerConfigSchema = z
         "Invalid Docker image allowlist prefixes.",
       ),
 
+    DOCKER_INSTALLER_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(30_000)
+      .max(3_600_000)
+      .default(900_000),
+
+    DOCKER_ALLOWED_INSTALLER_IMAGE_PREFIXES: z
+      .string()
+      .min(1)
+      .max(2048)
+      .default("ghcr.io/pterodactyl/installers:")
+      .transform((value) =>
+        value.split(",").map((entry) => entry.trim()).filter(Boolean),
+      )
+      .refine(
+        (prefixes) =>
+          prefixes.length > 0 &&
+          prefixes.length <= 50 &&
+          prefixes.every((prefix) =>
+            /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/.test(prefix),
+          ),
+        "Invalid installer image allowlist prefixes.",
+      ),
+
     DOCKER_MANAGED_LABEL: z
       .string()
       .regex(/^[a-zA-Z0-9_.-]{1,128}$/)
