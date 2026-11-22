@@ -11,6 +11,7 @@ export { DockerContainerDiscovery } from "./docker-container-discovery.js";
 export { DockerVolumeManager } from "./docker-volume-manager.js";
 export { DockerServerManager } from "./docker-server-manager.js";
 export { DockerRuntime } from "./docker-runtime.js";
+export { DockerHealthCheck } from "./docker-health-check.js";
 
 export {
   createDockerRuntime,
@@ -31,6 +32,10 @@ export type {
 export type {
   DockerVolumeInfo,
 } from "./docker-volume-manager.js";
+
+export type {
+  DockerHealthCheckResult,
+} from "./docker-health-check.js";
 
 export type {
   DockerCommandResult,
