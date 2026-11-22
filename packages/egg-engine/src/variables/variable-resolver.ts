@@ -34,7 +34,7 @@ export function resolveEggVariables(
 
     const rules = variable.rules?.trim();
 
-    if (rules && value !== "") {
+    if (rules) {
       const validation = validateVariableRules(value, rules);
 
       if (!validation.valid) {
