@@ -18,6 +18,20 @@ const RESOURCE_NAME_PATTERN =
 const IMAGE_PATTERN =
   /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$/;
 
+interface DockerInspectOutput {
+  Id?: unknown;
+  Name?: unknown;
+  Config?: {
+    Image?: unknown;
+    Labels?: unknown;
+  };
+  State?: {
+    Status?: unknown;
+    Running?: unknown;
+    ExitCode?: unknown;
+  };
+}
+
 export type DockerContainerOperation =
   | "start"
   | "stop"
@@ -222,6 +236,56 @@ export class DockerClient {
       throw new Error(
         "Invalid Docker resource limits.",
       );
+    }
+
+    if (
+      typeof options.startupCommand !== "string" ||
+      options.startupCommand.length === 0 ||
+      options.startupCommand.length > 16_384 ||
+      options.startupCommand.includes("\0")
+    ) {
+      throw new Error("Invalid Docker startup command.");
+    }
+
+    if (
+      options.environment === null ||
+      typeof options.environment !== "object" ||
+      Array.isArray(options.environment)
+    ) {
+      throw new Error("Invalid Docker environment.");
+    }
+
+    if (
+      !Array.isArray(options.ports) ||
+      options.ports.length === 0 ||
+      options.ports.length > 100
+    ) {
+      throw new Error("Invalid Docker port bindings.");
+    }
+
+    const seenPorts = new Set<string>();
+
+    for (const port of options.ports) {
+      if (
+        isIP(port.hostIp) === 0 ||
+        !Number.isInteger(port.hostPort) ||
+        port.hostPort < 1 ||
+        port.hostPort > 65535 ||
+        !Number.isInteger(port.containerPort) ||
+        port.containerPort < 1 ||
+        port.containerPort > 65535 ||
+        (port.protocol !== "tcp" && port.protocol !== "udp")
+      ) {
+        throw new Error("Invalid Docker port binding.");
+      }
+
+      const key = `${port.hostIp}:${port.hostPort}/${port.protocol}`;
+
+      if (seenPorts.has(key)) {
+        throw new Error("Duplicate Docker host port binding.");
+      }
+
+      seenPorts.add(key);
     }
 
     const entries = Object.entries(options.environment);
