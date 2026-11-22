@@ -1,7 +1,26 @@
 import { z } from "zod";
 
+const agentServerStatusSchema = z
+  .object({
+    serverId: z.uuid(),
+    containerId: z.string().regex(/^[a-f0-9]{12,64}$/i),
+    status: z.enum([
+      "running",
+      "created",
+      "exited",
+      "restarting",
+      "dead",
+      "paused",
+      "removing",
+      "unknown",
+    ]),
+    exitCode: z.number().int().nullable(),
+  })
+  .strict();
+
 export const agentHeartbeatSchema = z
   .object({
+    servers: z.array(agentServerStatusSchema).max(100).default([]),
     agentVersion: z.string().trim().min(1).max(64),
     dockerVersion: z.string().trim().min(1).max(64),
 
