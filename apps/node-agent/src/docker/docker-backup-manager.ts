@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, rename, rm, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
@@ -65,7 +65,10 @@ export class DockerBackupManager {
     const destination = this.resolveStoragePath(relativePath);
     const temporary = `${destination}.${randomUUID()}.tmp`;
     const directory = dirname(destination);
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    await chmod(this.directory, 0o700);
     await mkdir(directory, { recursive: true, mode: 0o700 });
+    await chmod(directory, 0o700);
 
     const hash = createHash("sha256");
     let sizeBytes = 0;
@@ -127,10 +130,11 @@ export class DockerBackupManager {
     backupId: string,
     storagePath: string,
     expectedChecksum: string,
+    maxBytes: number,
     signal?: AbortSignal,
   ): Promise<{ restored: true; checksum: string; sizeBytes: number }> {
     this.validateIds(serverId, containerId, backupId);
-    if (!CHECKSUM_PATTERN.test(expectedChecksum)) {
+    if (!CHECKSUM_PATTERN.test(expectedChecksum) || !Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
       throw new Error("Invalid backup checksum.");
     }
 
@@ -141,7 +145,7 @@ export class DockerBackupManager {
 
     const source = this.resolveStoragePath(storagePath);
     const metadata = await stat(source);
-    if (!metadata.isFile() || metadata.size <= 0 || metadata.size > this.maxBackupBytes) {
+    if (!metadata.isFile() || metadata.size <= 0 || metadata.size > Math.min(this.maxBackupBytes, maxBytes)) {
       throw new Error("Backup archive is missing or exceeds the configured size limit.");
     }
 
