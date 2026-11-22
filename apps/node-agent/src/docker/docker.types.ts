@@ -38,6 +38,7 @@ export interface DockerContainerCreateOptions {
   pidsLimit: number;
   networkName: string;
   ports: DockerPortBinding[];
+  configHash: string;
 }
 
 export interface DockerNetworkInfo {
