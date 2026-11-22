@@ -138,7 +138,14 @@ async function main(): Promise<void> {
           message.job.type,
         );
 
-        await jobBridge.handleMessage(message);
+        void jobBridge.handleMessage(message).catch((error) => {
+          console.error(
+            "[MatrixHost Agent] Job bridge failed:",
+            error instanceof Error
+              ? error.message
+              : "Unknown job bridge error.",
+          );
+        });
 
         return;
       }
