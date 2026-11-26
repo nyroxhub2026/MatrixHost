@@ -120,7 +120,7 @@ export class DockerNetworkManager {
     } catch (error) {
       if (
         error instanceof Error &&
-        /no such network/i.test(error.message)
+        /no such network|network .+ not found/i.test(error.message)
       ) {
         return null;
       }
