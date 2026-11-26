@@ -90,7 +90,14 @@ export async function updateNodeHeartbeat(
             nodeId,
             containerId: server.containerId,
             status: {
-              notIn: ["INSTALLING", "SUSPENDED", "ERROR", "RESTORING"],
+              notIn: [
+              "INSTALLING",
+              "SUSPENDED",
+              "ERROR",
+              "RESTORING",
+              "STOPPING",
+              "DELETED",
+            ],
             },
           },
           data: {
@@ -107,7 +114,13 @@ export async function updateNodeHeartbeat(
               not: null,
             },
             status: {
-              notIn: ["INSTALLING", "SUSPENDED", "ERROR"],
+              notIn: [
+                "INSTALLING",
+                "SUSPENDED",
+                "ERROR",
+                "STOPPING",
+                "DELETED",
+              ],
             },
           },
           select: {
@@ -131,7 +144,13 @@ export async function updateNodeHeartbeat(
               },
               nodeId,
               status: {
-                notIn: ["INSTALLING", "SUSPENDED", "ERROR"],
+                notIn: [
+                "INSTALLING",
+                "SUSPENDED",
+                "ERROR",
+                "STOPPING",
+                "DELETED",
+              ],
               },
             },
             data: {

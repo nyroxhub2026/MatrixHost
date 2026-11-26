@@ -550,6 +550,86 @@ export async function createServer(
   );
 }
 
+export async function deleteServer(
+  userId: string,
+  serverId: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true, status: true },
+    });
+
+    if (!user || user.status !== "ACTIVE") {
+      throw AppError.forbidden("Your account is not active.");
+    }
+
+    const isAdministrator =
+      user.role === "SUPER_ADMIN" || user.role === "ADMIN";
+
+    const server = await tx.server.findFirst({
+      where: {
+        id: serverId,
+        status: { not: "DELETED" },
+        ...(isAdministrator ? {} : { ownerId: user.id }),
+      },
+      select: { id: true, nodeId: true, status: true },
+    });
+
+    if (!server) {
+      throw AppError.notFound("Server not found.");
+    }
+
+    if (!["RUNNING", "OFFLINE", "ERROR"].includes(server.status)) {
+      throw AppError.conflict(
+        "Server cannot be deleted while another operation is in progress.",
+      );
+    }
+
+    const activeJobs = await tx.nodeJob.count({
+      where: {
+        serverId,
+        status: { in: ["QUEUED", "DELIVERED", "RUNNING"] },
+      },
+    });
+
+    if (activeJobs > 0) {
+      throw AppError.conflict(
+        "Wait for the current server operation to finish before deleting it.",
+      );
+    }
+
+    await tx.server.update({
+      where: { id: serverId },
+      data: { status: "STOPPING" },
+    });
+
+    const job = await tx.nodeJob.create({
+      data: {
+        nodeId: server.nodeId,
+        serverId,
+        type: "DELETE_SERVER",
+        status: "QUEUED",
+        idempotencyKey: `delete-server:${serverId}:${Date.now()}`,
+        payload: { serverId },
+        maxAttempts: 5,
+        availableAt: new Date(),
+      },
+      select: { id: true },
+    });
+
+    return {
+      serverId,
+      jobId: job.id,
+      status: "STOPPING" as const,
+    };
+  }, {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    maxWait: 10000,
+    timeout: 15000,
+  });
+}
+
 export async function getServerById(
   userId: string,
   serverId: string
@@ -576,6 +656,7 @@ export async function getServerById(
   const server = await prisma.server.findFirst({
     where: {
       id: serverId,
+      status: { not: "DELETED" },
       ...(isAdministrator
         ? {}
         : { ownerId: user.id }),
@@ -612,9 +693,10 @@ export async function listServers(userId: string) {
 
   return prisma.server.findMany({
     where: isAdministrator
-      ? {}
+      ? { status: { not: "DELETED" } }
       : {
           ownerId: user.id,
+          status: { not: "DELETED" },
         },
 
     select: serverResponseSelect,

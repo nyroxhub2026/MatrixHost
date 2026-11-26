@@ -120,7 +120,7 @@ export class DockerNetworkManager {
     } catch (error) {
       if (
         error instanceof Error &&
-        /no such network/i.test(error.message)
+        /no such network|network .+ not found/i.test(error.message)
       ) {
         return null;
       }
@@ -179,6 +179,7 @@ export class DockerNetworkManager {
   async remove(
     networkName: string,
     expectedServerId: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     this.validate(networkName, expectedServerId);
 
@@ -199,7 +200,7 @@ export class DockerNetworkManager {
       "network",
       "rm",
       networkName,
-    ]);
+    ], signal);
   }
 
   private validate(

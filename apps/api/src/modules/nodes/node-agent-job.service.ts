@@ -321,6 +321,13 @@ async function failInvalidJob(
         },
       });
     }
+
+    if (type === "DELETE_SERVER" && serverId) {
+      await transaction.server.updateMany({
+        where: { id: serverId, nodeId, status: "STOPPING" },
+        data: { status: "ERROR" },
+      });
+    }
   });
 }
 

@@ -170,12 +170,20 @@ export async function completeNodeJob(
         backupChecksum !== undefined &&
         /^[a-f0-9]{64}$/i.test(backupChecksum) &&
         restoreBackup?.checksum === backupChecksum);
+    const validDeleteResult =
+      job.type !== "DELETE_SERVER" ||
+      !input.success ||
+      (job.serverId !== null &&
+        input.result?.serverId === job.serverId &&
+        input.result?.operation === "DELETE_SERVER" &&
+        input.result?.deleted === true);
     const validCreateResult =
       (job.type !== "CREATE_SERVER" ||
         !input.success ||
         (containerId !== undefined && /^[a-f0-9]{12,64}$/i.test(containerId))) &&
       validCreateBackupResult &&
-      validRestoreBackupResult;
+      validRestoreBackupResult &&
+      validDeleteResult;
 
     const completionData:
       Prisma.NodeJobUpdateManyMutationInput = validCreateResult
@@ -224,6 +232,38 @@ export async function completeNodeJob(
         where: { id: backupId, serverId: job.serverId, status: "RESTORING" },
         data: { status: "COMPLETED" },
       });
+    }
+
+    if (job.type === "DELETE_SERVER" && job.serverId) {
+      if (input.success && validCreateResult) {
+        await transaction.allocation.updateMany({
+          where: { serverId: job.serverId, nodeId },
+          data: { serverId: null, isPrimary: false },
+        });
+
+        await transaction.nodeResourceReservation.updateMany({
+          where: { serverId: job.serverId, nodeId, status: "ACTIVE" },
+          data: { status: "RELEASED", releasedAt: now },
+        });
+
+        const deletedServer = await transaction.server.updateMany({
+          where: { id: job.serverId, nodeId, status: "STOPPING" },
+          data: { status: "DELETED", containerId: null },
+        });
+
+        if (deletedServer.count !== 1) {
+          throw new Error("Server deletion state could not be finalized.");
+        }
+      } else {
+        await transaction.server.updateMany({
+          where: { id: job.serverId, nodeId, status: "STOPPING" },
+          data: { status: "ERROR" },
+        });
+      }
+
+      // DELETED is a soft-delete state. Keep the server and backup
+      // metadata so retained node-local backup archives remain referenced.
+      return true;
     }
 
     if (job.serverId) {
