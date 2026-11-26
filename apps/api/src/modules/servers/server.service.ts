@@ -656,6 +656,7 @@ export async function getServerById(
   const server = await prisma.server.findFirst({
     where: {
       id: serverId,
+      status: { not: "DELETED" },
       ...(isAdministrator
         ? {}
         : { ownerId: user.id }),
