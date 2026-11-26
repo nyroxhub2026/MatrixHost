@@ -693,9 +693,10 @@ export async function listServers(userId: string) {
 
   return prisma.server.findMany({
     where: isAdministrator
-      ? {}
+      ? { status: { not: "DELETED" } }
       : {
           ownerId: user.id,
+          status: { not: "DELETED" },
         },
 
     select: serverResponseSelect,
