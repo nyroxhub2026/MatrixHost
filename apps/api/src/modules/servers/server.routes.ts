@@ -87,6 +87,23 @@ export async function serverRoutes(
     }
   );
 
+  app.delete(
+    "/:serverId",
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const user = request.authUser;
+      if (!user) throw AppError.unauthorized();
+      const parsed = serverParamsSchema.safeParse(request.params);
+      if (!parsed.success) throw AppError.badRequest("Invalid server ID.");
+      const result = await deleteServer(user.id, parsed.data.serverId);
+      return reply.code(202).send({
+        success: true,
+        message: "Server deletion has been queued.",
+        data: result,
+      });
+    },
+  );
+
   app.get(
     "/:serverId",
     {
