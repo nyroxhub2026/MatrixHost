@@ -170,12 +170,20 @@ export async function completeNodeJob(
         backupChecksum !== undefined &&
         /^[a-f0-9]{64}$/i.test(backupChecksum) &&
         restoreBackup?.checksum === backupChecksum);
+    const validDeleteResult =
+      job.type !== "DELETE_SERVER" ||
+      !input.success ||
+      (job.serverId !== null &&
+        input.result?.serverId === job.serverId &&
+        input.result?.operation === "DELETE_SERVER" &&
+        input.result?.deleted === true);
     const validCreateResult =
       (job.type !== "CREATE_SERVER" ||
         !input.success ||
         (containerId !== undefined && /^[a-f0-9]{12,64}$/i.test(containerId))) &&
       validCreateBackupResult &&
-      validRestoreBackupResult;
+      validRestoreBackupResult &&
+      validDeleteResult;
 
     const completionData:
       Prisma.NodeJobUpdateManyMutationInput = validCreateResult
