@@ -234,6 +234,38 @@ export async function completeNodeJob(
       });
     }
 
+    if (job.type === "DELETE_SERVER" && job.serverId) {
+      if (input.success && validCreateResult) {
+        await transaction.allocation.updateMany({
+          where: { serverId: job.serverId, nodeId },
+          data: { serverId: null, isPrimary: false },
+        });
+
+        await transaction.nodeResourceReservation.updateMany({
+          where: { serverId: job.serverId, nodeId, status: "ACTIVE" },
+          data: { status: "RELEASED", releasedAt: now },
+        });
+
+        const deletedServer = await transaction.server.updateMany({
+          where: { id: job.serverId, nodeId, status: "STOPPING" },
+          data: { status: "DELETED", containerId: null },
+        });
+
+        if (deletedServer.count !== 1) {
+          throw new Error("Server deletion state could not be finalized.");
+        }
+      } else {
+        await transaction.server.updateMany({
+          where: { id: job.serverId, nodeId, status: "STOPPING" },
+          data: { status: "ERROR" },
+        });
+      }
+
+      // DELETED is a soft-delete state. Keep the server and backup
+      // metadata so retained node-local backup archives remain referenced.
+      return true;
+    }
+
     if (job.serverId) {
       let nextStatus:
         | "OFFLINE"
