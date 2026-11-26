@@ -7,6 +7,7 @@ import { createServerSchema } from "./server.schemas.js";
 
 import {
   createServer,
+  deleteServer,
   getServerById,
   listServers,
 } from "./server.service.js";
